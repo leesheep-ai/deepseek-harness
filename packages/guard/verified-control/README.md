@@ -72,11 +72,19 @@ Adaptive effort is optional. When enabled, an `agent/request` listener changes o
 <a id="model-experience"></a>
 ## Model Experience
 
-The model sees a static verified-control policy section plus explicit control tools for contracts, facts, delegation preparation, reconciliation, and state inspection. Ordinary tool choice remains observation-driven; there is no static precomputed ToolCall DAG. Reversible local work can proceed autonomously when authorized because transaction mechanics are owned by the harness.
+### Verified-control policy and control tools
+
+#### What the model sees
+
+A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven.
+
+#### Token effect
+
+The static policy and control-tool schemas add a fixed request-prefix cost while this plugin is mounted. Data-dependent contract, World State, transaction, incident, and delegation values add tokens only through ordinary tool calls/results that enter retained conversation history; the plugin does not continuously serialize the full control state into every request.
 
 #### KV Cache effect
 
-The control prompt is static, and dynamic state is read through tools/session projection rather than interpolated into a changing system prefix. Adaptive effort changes request configuration only. Provider-specific cache behavior remains owned by the LLM adapter.
+The policy text and tool definitions are stable for a mounted composition, so they remain part of the reusable request prefix. Adaptive effort changes request configuration rather than rewriting prior messages, and dynamic control data is append-only tool traffic, so the plugin does not intentionally invalidate earlier prefix cache entries.
 
 ## Known Limitations and Deferred Work
 

@@ -57,11 +57,19 @@ Adaptive effort 默认关闭，因为 effort ID 属于具体 model/adapter 能�
 <a id="model-experience"></a>
 ## 模型体验
 
-Bundle 自身只负责挂载 guard。Guard 增加一段静态 control-policy prompt 和显式控制工具，普通 model/tool 交互仍保持 observation-driven。
+### 已挂载的 Verified Control 表面
+
+#### 模型看到什么
+
+Bundle 自身不增加独立的动态模型内容；它挂载 `@deepseek-ai/dsh-verified-control`，因此模型看到的是该 guard 的静态 verified-control policy section 与 `control_*` 工具 schema。所有依数据变化的控制状态和工具结果仍由 guard 持有并渲染。
+
+#### Token 影响
+
+Token 成本来自已挂载 guard 的固定 policy/tool-schema 前缀，以及实际使用控制工具时产生的依数据变化 tool traffic。Bundle 自身不会额外添加模型消息、工具 schema 或周期性全量状态序列化。
 
 #### KV Cache 影响
 
-Patch 与 control prompt 都是静态的。动态状态不会插值进 system prefix；启用 adaptive effort 后也只改变 request config。
+Bundle patch 为静态内容，已挂载 guard 的 policy/tool definitions 在固定组合中也保持稳定。因此除了 guard 已记录的 request configuration 变化和追加式 tool traffic 外，bundle 不会引入额外的 cache invalidation。
 
 ## 已知限制与延后工作
 

@@ -57,11 +57,19 @@ Adaptive effort is disabled because effort identifiers are model/adapter capabil
 <a id="model-experience"></a>
 ## Model Experience
 
-The bundle itself only mounts the guard. The guard adds one static control-policy prompt section and its explicit control tools while keeping ordinary model/tool interaction observation-driven.
+### Mounted verified-control surface
+
+#### What the model sees
+
+The bundle itself adds no separate dynamic model content; it mounts `@deepseek-ai/dsh-verified-control`, so the model sees that guard's static verified-control policy section and `control_*` tool schemas. All data-dependent control state and tool results remain owned and rendered by the guard.
+
+#### Token effect
+
+The token cost is the mounted guard's fixed policy/tool-schema prefix plus data-dependent tool traffic when control tools are used. The bundle adds no additional model message, tool schema, or recurring state serialization of its own.
 
 #### KV Cache effect
 
-The patch and control prompt are static. Dynamic state is not interpolated into the system prefix; adaptive effort, when enabled, changes request configuration only.
+The bundle patch is static, and the mounted guard's policy/tool definitions are stable for the composition. The bundle therefore adds no extra cache invalidation beyond the guard's documented request configuration and append-only tool traffic.
 
 ## Known Limitations and Deferred Work
 

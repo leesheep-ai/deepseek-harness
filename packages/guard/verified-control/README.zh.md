@@ -72,11 +72,19 @@ Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改
 <a id="model-experience"></a>
 ## 模型体验
 
-模型会看到静态 verified-control policy section，以及 Contract、Fact、Delegation preparation、Reconciliation 和 State inspection 等控制工具。普通工具选择仍是 observation-driven，不存在静态预计算的完整 ToolCall DAG。只要获得授权，可逆本地工作可以自动继续，因为 transaction mechanics 由 Harness 持有。
+### Verified Control 策略与控制工具
+
+#### 模型看到什么
+
+一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。
+
+#### Token 影响
+
+插件挂载后，静态 policy 与控制工具 schema 会产生固定的 request-prefix token 成本。依数据变化的 Contract、World State、Transaction、Incident 与 Delegation 内容只会通过普通工具调用/结果进入保留的对话历史；插件不会在每次请求中持续序列化全部控制状态。
 
 #### KV Cache 影响
 
-控制 prompt 是静态文本；动态状态通过 tools/session projection 获取，而不是持续插值进 system prefix。Adaptive effort 仅修改 request config。Provider 特定缓存行为仍属于对应 LLM adapter。
+在固定组合中，policy 文本与工具定义保持稳定，因此可以留在可复用请求前缀中。Adaptive effort 只修改请求配置而不改写历史消息，动态控制数据以追加式 tool traffic 出现，所以插件不会主动使既有前缀 KV Cache 失效。
 
 ## 已知限制与延后工作
 
