@@ -36,6 +36,8 @@ export interface Incident { id: string; kind: IncidentKind; message: string; cre
 
 export interface VerifiedControlState {
   contract: GoalContract | null
+  /** Durable Goal id whose objective/budgets this contract governs. */
+  contractGoalId: string | null
   facts: Record<string, TrustedFact>
   openTransactions: Record<string, OpenTransaction>
   externalEffects: Record<string, ExternalEffect>
@@ -52,7 +54,7 @@ export interface VerifiedControlState {
 }
 
 export const EMPTY_CONTROL_STATE: VerifiedControlState = {
-  contract: null, facts: {}, openTransactions: {}, externalEffects: {}, incidents: [],
+  contract: null, contractGoalId: null, facts: {}, openTransactions: {}, externalEffects: {}, incidents: [],
   toolCalls: 0, failures: 0, delegations: 0, delegationContracts: {}, successfulTools: 0,
   consecutiveFailures: 0, lastTool: { signature: null, repeated: 0 }, startedAt: null, recoveries: 0,
 }
