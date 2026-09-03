@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { assembleContextFor, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 const rootConfigPath = process.argv[2]
@@ -20,7 +21,7 @@ try {
     options: {
       provider: 'anthropic',
       model: 'claude-fable-5-1',
-      reasoningEffort: 'low',
+      reasoningEffort: ReasoningEffortId('low'),
     },
     session,
     inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
