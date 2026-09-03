@@ -22,6 +22,13 @@ describe('verified control policy', () => {
     const { agent, ctx } = fixture({ ...EMPTY_CONTROL_STATE, contract, contractGoalId: 'goal-1', toolCalls: 999 })
     expect(baseToolDecision(ctx, config, exec(agent, 'control_get_state'))).toEqual({ kind: 'allow' })
   })
+  it('treats maxFailures zero as zero tolerated failures, not an immediate work ban', () => {
+    const zeroTolerance = { ...contract, requestedBudget: { ...contract.requestedBudget, maxFailures: 0 } }
+    const healthy = fixture({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, contractGoalId: 'goal-1', failures: 0 })
+    expect(baseToolDecision(healthy.ctx, config, exec(healthy.agent, 'write'))).toEqual({ kind: 'allow' })
+    const failed = fixture({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, contractGoalId: 'goal-1', failures: 1 })
+    expect(baseToolDecision(failed.ctx, config, exec(failed.agent, 'write'))).toEqual(expect.objectContaining({ kind: 'deny', reason: expect.stringContaining('failure budget exceeded') }))
+  })
   it('allows verified completion to commit at an exhausted operational budget boundary', () => {
     const { agent, ctx } = fixture({ ...EMPTY_CONTROL_STATE, contract, contractGoalId: 'goal-1', toolCalls: 20, failures: 5, startedAt: Date.now() - 200_000 })
     expect(baseToolDecision(ctx, config, exec(agent, 'update_goal', { action: 'complete' }))).toEqual({ kind: 'allow' })
