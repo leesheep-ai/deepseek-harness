@@ -37,10 +37,13 @@ function modelPromptState(context: AssembleContext): ModelPromptState {
   const model = configuredModel && configuredModel.length > 0 ? configuredModel : persisted?.model
   const effort = agent.options.reasoningEffort !== undefined
     ? String(agent.options.reasoningEffort)
-    : persisted?.model === model && persisted.reasoningEffort !== undefined
+    : persisted !== undefined && persisted.model === model && persisted.reasoningEffort !== undefined
       ? String(persisted.reasoningEffort)
       : undefined
-  return { model, effort }
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+  }
 }
 
 /**
