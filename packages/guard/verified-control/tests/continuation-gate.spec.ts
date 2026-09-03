@@ -47,6 +47,13 @@ describe('verified-control continuation gate', () => {
     expect(continuationBlocker(state, config)).toEqual(expect.objectContaining({ code: 'external-effect-review' }))
   })
 
+  it('treats maxFailures zero as zero tolerated failures rather than an immediate stop', () => {
+    const zeroTolerance = { ...contract, requestedBudget: { ...contract.requestedBudget, maxFailures: 0 } }
+    expect(continuationBlocker({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, failures: 0 }, config)).toBeUndefined()
+    expect(continuationBlocker({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, failures: 1 }, config))
+      .toEqual(expect.objectContaining({ code: 'failure-budget' }))
+  })
+
   it('detects duration and repetition stalls but leaves healthy work alone', () => {
     const healthy = { ...EMPTY_CONTROL_STATE, contract, startedAt: 1_000 }
     expect(continuationBlocker(healthy, config, 2_000)).toBeUndefined()
@@ -59,7 +66,7 @@ describe('verified-control continuation gate', () => {
     let stop: ((payload: any) => void) | undefined
     const block = vi.fn()
     const agent = { session: {} }
-    const state = { ...EMPTY_CONTROL_STATE, contract, failures: 5 }
+    const state = { ...EMPTY_CONTROL_STATE, contract, failures: 6 }
     const ctx = {
       on(event: string, handler: (payload: any) => void) {
         if (event === 'agent/turn-stopping') stop = handler
