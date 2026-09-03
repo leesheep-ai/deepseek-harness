@@ -46,8 +46,8 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Install workspace
         run: pnpm install --no-frozen-lockfile
-      - name: Build host package exports
-        run: pnpm run build:lib:host
+      - name: Build host runtime exports
+        run: pnpm exec tsdown --env.DSH_BUILD_FACE host
       - name: Generate verified-control snapshot goldens
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
         env:
