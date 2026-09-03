@@ -35,6 +35,19 @@ jobs:
       - name: Sync verified-control monorepo metadata
         if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
         run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tsconfig.base.json')
+          text = path.read_text()
+          anchor = '      "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],'
+          entry = '      "@deepseek-ai/dsh-verified-control-bundle": ["./packages/bundle/verified-control/src"],'
+          if entry not in text:
+              if anchor not in text:
+                  raise SystemExit(f'missing tsconfig.base.json anchor: {anchor}')
+              text = text.replace(anchor, f'{anchor}\n{entry}', 1)
+          path.write_text(text)
+          PY
           pnpm run gen-tsconfig-paths
           python - <<'PY'
           from pathlib import Path
