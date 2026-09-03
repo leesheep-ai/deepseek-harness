@@ -43,6 +43,8 @@ kind: "package-reference"
 
 Goal completion 采用 fail-closed：只有全部 success check 与 invariant 都具有确定性 verifier 覆盖并通过时，`update_goal(action=complete)` 才允许执行。配置为 workspace mutation 的工具在执行前和 commit 前都会验证 invariants。
 
+自动续跑同样采用 fail-closed。在 `agent/turn-stopping` 边界，Verified Control 会把无法安全继续或已经没有有效进展空间的硬条件——tool/failure/duration budget 耗尽、重复工具调用卡死、rollback 失败尚未处理、external-effect 尚待人工确认——转换为原生 Goal 的 `blocked` 状态。这样 `goal-round-driver` 仍然是自动轮次与 round accounting 的唯一所有者；Verified Control 不会再创建一条并行 continuation loop。
+
 工具失败以及控制面的验证/恢复失败会记录为 Incident，并附带 regression-eval candidate，把真实失败转化为后续评测覆盖。
 
 -----
@@ -76,7 +78,7 @@ Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改
 
 #### 模型看到什么
 
-一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。
+一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。如果命中 continuation hard stop，原生 Goal 会转为 `blocked`，因此不会再调度下一轮自动 Goal Round。
 
 #### Token 影响
 
@@ -104,6 +106,6 @@ Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/request`）承载 hard-control 语义，不 fork core loop。
+除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/turn-stopping`、`agent/request`）承载 hard-control 语义，不 fork core loop。
 
 </details>
