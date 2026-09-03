@@ -7,7 +7,7 @@ const configPath = fileURLToPath(new URL('./fixtures/real-composition/cordis.yml
 const tsconfigPath = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 describe('verified-control real Loader composition', () => {
-  it('mounts the bundle into the base profile and exposes its real model/control surfaces', async () => {
+  it('mounts the bundle through a real Loader tree and exposes its model/control surfaces', async () => {
     const result = await runLoaderSmoke({
       label: 'verified-control real composition snapshot',
       tempDirPrefix: 'verified-control-real-composition-',
