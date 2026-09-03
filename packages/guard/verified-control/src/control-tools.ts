@@ -41,6 +41,7 @@ export function registerControlTools(ctx: Context, requireGoalForControlledWork:
     output: jsonOutput,
     execute(args, exec) {
       if (exec.agent === undefined) throw new Error('control_amend_contract requires an agent')
+      if (requireGoalForControlledWork && !hasCurrentGoal(ctx, exec.agent)) throw new Error('a current durable goal is required before amending its Goal Contract')
       const contract = parseContract(args.contract)
       setContract(exec.agent, contract, true)
       return Promise.resolve(toJsonValue({ accepted: true, objective: contract.objective }))
@@ -161,6 +162,7 @@ export function registerControlTools(ctx: Context, requireGoalForControlledWork:
       const state = stateOf(ctx, exec.agent)
       return Promise.resolve(toJsonValue({
         contract: state.contract,
+        contractGoalId: state.contractGoalId,
         facts: validFacts(state),
         openTransactions: state.openTransactions,
         externalEffects: state.externalEffects,
