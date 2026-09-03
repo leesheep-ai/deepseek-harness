@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { GoalBlockReason, GoalRef } from '@deepseek-ai/dsh-goal'
-import { failureBudgetExceeded, type PolicyConfig } from './policy.ts'
+import { failureBudgetExhausted, type PolicyConfig } from './policy.ts'
 import { stateOf } from './runtime-state.ts'
 import type { VerifiedControlState } from './types.ts'
 
@@ -46,10 +46,10 @@ export function continuationBlocker(
       message: 'Verified-control tool-call budget is exhausted; autonomous continuation is blocked.',
     }
   }
-  if (failureBudgetExceeded(state.failures, contract?.requestedBudget.maxFailures, config.maxFailures)) {
+  if (failureBudgetExhausted(state.failures, contract?.requestedBudget.maxFailures, config.maxFailures)) {
     return {
       code: 'failure-budget',
-      message: 'Verified-control failure budget was exceeded; autonomous continuation is blocked.',
+      message: 'Verified-control failure budget is exhausted; autonomous continuation is blocked.',
     }
   }
   if (contract !== null && state.startedAt !== null
