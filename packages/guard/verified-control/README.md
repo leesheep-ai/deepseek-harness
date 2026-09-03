@@ -1,5 +1,5 @@
 ---
-description: "Opt-in control-plane guard that makes goals, authority, world state, verification, mutations, external effects, delegation, and recovery explicit for long-running agents."
+description: "Opt-in control-plane guard for durable goals, trusted world state, verification, transactional mutations, recovery, delegation, and trajectory control."
 kind: "package-reference"
 ---
 
@@ -9,17 +9,16 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-verified-control` is an opt-in control plane for DeepSeek Harness. It does not replace the native agent loop, sessions, compaction, sandbox, parallel tool execution, or subagent runtime. Instead it owns the parts a probabilistic model should not own by itself: a durable Goal Contract, freshness-aware World State, effective authority and budget limits, independent verification, transactional workspace mutation, uncertain external-side-effect reconciliation, delegation contracts, recovery, incidents, and adaptive reasoning effort.
+`dsh-verified-control` is an opt-in hard control plane for DeepSeek Harness. It keeps the native observation-driven agent loop, sessions, compaction, sandbox, parallel tool execution, and subagent runtime, while owning the boundaries a probabilistic model should not own alone: Goal Contract, trusted World State, effective authority and budgets, verification, commit/rollback, external-effect reconciliation, incidents, delegation contracts, and optional adaptive reasoning effort.
 
-The core rule is: **the model may propose and observe; the harness decides what may commit and what counts as verified.**
+The governing rule is: **the model may propose and observe; the harness decides what may commit and what counts as verified.**
 
 ## Table of Contents
 
 - [Use this package](#use-this-package)
 - [Control semantics](#control-semantics)
-- [Verification and transactions](#verification-and-transactions)
+- [Verification and recovery](#verification-and-recovery)
 - [Delegation and effort](#delegation-and-effort)
-- [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -29,84 +28,67 @@ The core rule is: **the model may propose and observe; the harness decides what 
 <a id="use-this-package"></a>
 ## Use this package
 
-The recommended installation path is the optional `@deepseek-ai/dsh-verified-control-bundle`, layered after `@deepseek-ai/dsh-base` in a profile. The bundle mounts this plugin without changing any shipped base-backed profile by default.
+The recommended path is `@deepseek-ai/dsh-verified-control-bundle`, layered after `@deepseek-ai/dsh-base`. Shipped profiles are unchanged unless that bundle is explicitly added.
 
-For a direct Cordis composition, mount the plugin after `fs`, `goals`, `sessionProjections`, and `tools` are available. Defaults are deliberately conservative: network authority is disabled, irreversible tools are empty, adaptive effort is disabled, and only `write`/`edit` are treated as transactional workspace mutations.
+Before controlled mutation, network activity, irreversible work, or delegation, create a normal durable goal and call `control_set_contract`. The contract declares the objective, deterministic success checks, safety invariants, non-goals, requested authority, and finite budgets. Deployment configuration can only reduce those requests. `control_amend_contract`, human fact attestation, and external-effect reconciliation enter the existing approval path.
 
-Before controlled work, the agent creates a normal durable goal and calls `control_set_contract`. The contract declares the objective, deterministic success checks, safety invariants, non-goals, requested authority, and requested budgets. The model cannot silently replace the contract: `control_amend_contract` always enters the human-approval path.
-
-World State is updated through `control_observe_fact`. Model observations are durable but not independently certified; `verifiedBy` remains empty until a human attestation or deterministic verifier succeeds. Facts carry confidence, observation time, optional TTL, dependency edges, and validity. Replacing or invalidating a root fact recursively invalidates dependent facts, and stale facts disappear from the current truth view.
+Use `control_observe_fact` for durable observations. Facts carry origin, confidence, observation time, optional TTL, dependency edges, independent verifier identities, and validity. Changing or invalidating a root fact recursively invalidates dependents, and stale facts disappear from the current truth view. Model observations do not self-certify.
 
 -----
 
 <a id="control-semantics"></a>
 ## Control semantics
 
-Effective authority is the intersection of what the Goal Contract requests and what deployment configuration allows. The model can never widen deployment policy. Tool, failure, duration, repeated-call, and delegation budgets are likewise clamped to the stricter limit.
+Effective authority is `contract request ∩ deployment policy`. Tool-call, failure, duration, repeated-call, and delegation budgets are similarly clamped to the stricter side. `control_get_state` remains available when operational budgets are exhausted so recovery cannot deadlock itself.
 
-Controlled mutation, network, irreversible, and delegation tool sets are explicit configuration lists. `control_get_state` remains available even when ordinary operational budgets are exhausted so the control plane cannot deadlock its own recovery path. Human governance tools such as contract amendment, fact attestation, and external-effect reconciliation use the existing approval service.
+Goal completion is fail-closed: `update_goal(action=complete)` is denied until all declared success checks and invariants have deterministic verifier coverage and pass. Configured workspace mutations also verify invariants before execution and again before commit.
 
-Goal completion is fail-closed. `update_goal(action=complete)` is denied until every declared success criterion and invariant has deterministic verification coverage and every check passes. Safety invariants are also checked before configured workspace mutations and re-checked after the mutation before commit.
+The plugin records tool failures and control-plane verification/recovery failures as incidents with regression-eval candidates, turning real failures into future test coverage.
 
 -----
 
-<a id="verification-and-transactions"></a>
-## Verification and transactions
+<a id="verification-and-recovery"></a>
+## Verification and recovery
 
-Supported deterministic verifier specs include file existence/absence, exact file content, contained text, independently certified fact equality, and shell commands that must exit successfully. A declared check without a verifier is not treated as success.
+Deterministic verifier specs cover file existence/absence, exact content, contained text, independently certified fact equality, and shell commands that must exit successfully. A declared check without a verifier fails closed.
 
-Configured file mutations (`write` and `edit` by default) run through the native `tools/execute` waterfall. Before dispatch, the plugin snapshots the target through `ctx.fs`, writes a durable open-transaction marker, and serializes conflicting transactions on the same file. Tool failure, thrown execution, or post-mutation invariant failure triggers rollback. Recovery uses a separate cleanup deadline instead of a potentially aborted tool signal.
+Configured file mutations (`write` and `edit` by default) are wrapped at `tools/execute`. The plugin captures the pre-state through `ctx.fs`, persists an open transaction, serializes conflicting writes to the same path, executes the tool, verifies invariants, then commits or rolls back. Crash recovery runs from durable transaction markers with a fresh cleanup deadline rather than a possibly aborted tool signal.
 
-Existing files can be restored through any writable `FileSystem` implementation. Removing a newly created file is automatic only when the provider proves a host-backed path inside the session workspace. If that proof is unavailable, rollback fails closed and leaves a durable `rollback-failed` transaction requiring review rather than pretending the mutation was undone.
+Existing files can be restored through any writable `FileSystem`. Automatic deletion of a newly created file is limited to a path that the provider can prove is host-backed and inside the session workspace; otherwise the transaction becomes `rollback-failed` and requires reconciliation instead of pretending recovery succeeded.
 
-Tools configured as irreversible external effects use a different state machine. The plugin writes an `open` marker before dispatch. A successful tool result confirms the effect; a failure, exception, or process restart with an orphaned marker becomes `review`. Ordinary controlled work is frozen until a human resolves the effect as `confirmed`, `not-applied`, or `compensated`. This deliberately avoids fictitious rollback semantics for email, deployments, database writes, and similar effects.
-
-Every tool failure and control-plane verification/recovery failure records an incident with a regression-eval candidate so repeated failures can become future evaluation coverage.
+Configured irreversible tools use a separate external-effect state machine. An `open` marker is persisted before dispatch; success resolves it as confirmed, while failure, exception, or crash-orphaning moves it to `review`. Further controlled work is frozen until a human resolves the effect as `confirmed`, `not-applied`, or `compensated`.
 
 -----
 
 <a id="delegation-and-effort"></a>
 ## Delegation and effort
 
-Delegation remains DeepSeek Harness' native subagent capability, including foreground and `run_in_background` execution. Verified control adds a parent-side boundary: a Goal Contract must request delegation, deployment policy must allow it, the clamped delegation budget must remain, and the model must first create a typed `control_prepare_delegation` contract containing an objective, expected evidence, and resource scope. One prepared contract is consumed by one configured delegation tool call.
+Delegation continues to use DeepSeek Harness' native subagent runtime, including `run_in_background`. Verified control adds the parent-side boundary: contract authority, deployment authority, a clamped delegation budget, and a typed `control_prepare_delegation` record containing objective, expected evidence, and resource scope. One prepared record is consumed by one configured delegation call.
 
-Adaptive reasoning effort is optional. When enabled, an `agent/request` listener changes only the current request's `reasoningEffort`; it does not rewrite transcript history or rebuild the system/tool prefix. Stable progress uses the baseline effort, repeated calls or consecutive failures use the elevated effort, and recovery risk or a critical failure streak uses the critical effort. The effort identifiers are adapter-owned strings, so deployments should configure values supported by their selected model.
-
------
-
-<a id="further-exploration"></a>
-## Further Exploration
-
-- [`src/index.ts`](src/index.ts) — composition and configuration surface.
-- [`src/policy.ts`](src/policy.ts) — authority, budgets, fail-closed completion and invariant gates.
-- [`src/state.ts`](src/state.ts) — World State freshness, invalidation, and attestation semantics.
-- [`src/transaction-runtime.ts`](src/transaction-runtime.ts) — mutation prepare/execute/verify/commit/rollback wiring.
-- [`src/external-effect-runtime.ts`](src/external-effect-runtime.ts) — uncertain external-side-effect reconciliation.
-- [`src/delegation-runtime.ts`](src/delegation-runtime.ts) — typed parent-side delegation contracts.
-- [`src/effort.ts`](src/effort.ts) — trajectory-driven test-time compute scheduling.
+Adaptive effort is optional. When enabled, an `agent/request` listener changes only the current request's `reasoningEffort`: stable progress uses baseline effort, failure/repetition raises it, and rollback/external-effect recovery risk uses critical effort. It never rewrites previous messages or rebuilds the system/tool prefix. Effort identifiers remain adapter/model capabilities.
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-The model sees a small set of explicit control tools in addition to the ordinary DeepSeek Harness tool catalog: set/amend contract, observe/verify/attest/invalidate facts, prepare delegation, reconcile uncertain external effects, and read control state. The model still chooses ordinary tools observation-by-observation; there is no static precomputed tool-call DAG.
-
-Failures are surfaced as ordinary tool errors with actionable control feedback. Successful local reversible work proceeds without asking the model to micromanage transaction mechanics. Human approval is reserved for control-boundary changes and uncertain external effects rather than routine reversible work.
+The model sees a static verified-control policy section plus explicit control tools for contracts, facts, delegation preparation, reconciliation, and state inspection. Ordinary tool choice remains observation-driven; there is no static precomputed ToolCall DAG. Reversible local work can proceed autonomously when authorized because transaction mechanics are owned by the harness.
 
 #### KV Cache effect
 
-The plugin does not inject a changing system-prompt prefix. Adaptive effort is applied through request configuration, and durable control data is read through tools/session projection, minimizing prompt-prefix churn. Provider-specific cache semantics remain owned by the selected LLM adapter.
+The control prompt is static, and dynamic state is read through tools/session projection rather than interpolated into a changing system prefix. Adaptive effort changes request configuration only. Provider-specific cache behavior remains owned by the LLM adapter.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Automatic deletion of a newly created file is intentionally limited to host-backed workspace paths that `ctx.fs` can prove; remote-only filesystems require manual reconciliation for that case.
-- `command_succeeds` requires a mounted shell service; compositions without one fail that verifier instead of silently passing it.
-- External-effect semantics depend on deployment configuration correctly classifying irreversible tools. The default list is empty because a generic shell command cannot be safely classified from its tool name alone.
-- Delegation contracts constrain the parent-side launch boundary. Enforcing `resourceScope` inside an out-of-process child requires the selected subagent provider/tool filter to expose an equivalent capability.
-- Adaptive effort cannot prove that every provider accepts every configured effort identifier; adapter/model compatibility remains the provider's contract.
+No runtime invariant companion is published because the authoritative control state is a validated session projection and cross-service safety is enforced synchronously in the tool and agent waterfalls.
+
+- New-file deletion rollback is intentionally limited to provable host-backed workspace paths; remote-only filesystems require manual reconciliation for that case.
+- `command_succeeds` requires a mounted shell service and fails rather than silently passing when the service is unavailable.
+- Deployment-specific irreversible tools cannot be inferred from a generic shell tool name and must be configured explicitly.
+- Delegation `resourceScope` is enforced as a parent-side contract; enforcing it inside an out-of-process child requires equivalent provider/tool-filter support.
+- Adaptive effort cannot infer which identifiers a selected provider/model supports.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -114,6 +96,6 @@ The plugin does not inject a changing system-prompt prefix. Adaptive effort is a
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-This package intentionally integrates through public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, and `agent/request`) instead of forking the core loop. Keep new hard-control semantics here unless the required primitive is genuinely missing from core.
+Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, and `agent/request`) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
 
 </details>
