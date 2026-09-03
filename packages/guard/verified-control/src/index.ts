@@ -100,6 +100,7 @@ export const Config: z<Config> = z.object({
 
 const stateSchema = zod.object({
   contract: zod.unknown().nullable(),
+  contractGoalId: zod.string().nullable(),
   facts: zod.record(zod.string(), zod.unknown()),
   openTransactions: zod.record(zod.string(), zod.unknown()),
   externalEffects: zod.record(zod.string(), zod.unknown()),
@@ -120,7 +121,7 @@ export const verifiedControlProjection = {
   stateSchema,
   init: (): VerifiedControlState => structuredClone(EMPTY_CONTROL_STATE),
   apply: (state: VerifiedControlState, event: SessionEvent) => applyVerifiedControlEvent(state, event),
-  stateVersion: 4,
+  stateVersion: 5,
 } satisfies ProjectionDefinition<'verified-control', VerifiedControlState>
 
 export function apply(ctx: Context, input: Config = {}): void {
