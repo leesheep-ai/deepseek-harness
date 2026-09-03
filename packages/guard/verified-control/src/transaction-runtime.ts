@@ -78,8 +78,14 @@ export function installTransactionRuntime(ctx: Context, config: TransactionRunti
 
   ctx.on('tools/execute', async (exec, next) => {
     const agent = exec.agent
+    if (agent === undefined || !config.mutationTools.includes(exec.name)) return next()
     const path = filePath(exec.arguments)
-    if (agent === undefined || path === undefined || !config.mutationTools.includes(exec.name)) return next()
+    if (path === undefined) {
+      return transactionError(
+        `configured mutation tool ${exec.name} must expose a non-empty file_path argument so verified-control can capture its target`,
+        'MUTATION_PATH_REQUIRED',
+      )
+    }
 
     return locks.run(path, async () => {
       const tx = await captureFileTransaction(ctx.fs, {
