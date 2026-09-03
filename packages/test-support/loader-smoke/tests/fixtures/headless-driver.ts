@@ -2,6 +2,7 @@
 /** Snapshot-only Loader driver: stream one fixture turn as canonical JSONL. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { delimiter as pathDelimiter } from 'node:path'
 import { installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -17,10 +18,17 @@ const uninstallFailLoud = installFailLoud(NAME)
 let ctx: Context | undefined
 try {
   loadEnv(NAME)
+  const extraOverlayPaths = (process.env.DSH_TEST_EXTRA_OVERLAYS ?? '')
+    .split(pathDelimiter)
+    .map(path => path.trim())
+    .filter(path => path.length > 0)
   ctx = await bootProductionProfile({
     binName: NAME,
     profile: 'headless',
-    overlayPaths: [resolveConfigPath(configPath, undefined)],
+    overlayPaths: [
+      resolveConfigPath(configPath, undefined),
+      ...extraOverlayPaths.map(path => resolveConfigPath(path, undefined)),
+    ],
   })
   const result = await runFixtureTurn(ctx, {
     task: taskParts.join(' '),
