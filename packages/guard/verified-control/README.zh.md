@@ -45,7 +45,7 @@ kind: "package-reference"
 
 Goal completion 继续采用 fail-closed，但它被视为“经过验证的 commit 操作”，而不是另一份普通 operational work。即使 tool/failure/duration budget 已经到达边界，只要任务确实完成，`update_goal(action=complete)` 仍可进入最终验证；但只要还有任何 transaction 或 external effect 未收口、Contract 已 stale/绑定到别的 Goal，或者任一 success check/invariant 缺少确定性 verifier 覆盖或验证失败，completion 都会被拒绝。配置为 workspace mutation 的工具在执行前和 commit 前也都会验证 invariants。
 
-Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/duration budget 耗尽、failure tolerance 已被超过、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
+Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/duration budget 耗尽、failure tolerance 已耗尽、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
 
 Claude Fable 5.1 thinking replay 也采用 fail-closed。在派发一个仍保留 replay-bound Fable reasoning block 的 Fable 请求前，guard 会重建该 block 生成时位于它之前的 model-visible surface，并与当前 retained prefix、system prompt 和有序 tool definitions 比较。如果更早消息被替换、只 compact 了 retained thinking 之前的历史、system prompt 被修改或 tool schema 被修改，就产生 `FABLE_PREFIX_MISMATCH`；若当前存在 active Goal，则会持久化转为 `blocked`，而不是继续发送已知会违反 Fable prefix binding 的 provider request。
 
