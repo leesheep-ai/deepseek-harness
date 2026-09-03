@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-verified-control` is an opt-in hard control plane for DeepSeek Harness. It keeps the native observation-driven agent loop, sessions, compaction, sandbox, parallel tool execution, and subagent runtime, while owning the boundaries a probabilistic model should not own alone: Goal Contract, trusted World State, effective authority and budgets, verification, commit/rollback, external-effect reconciliation, incidents, delegation contracts, optional adaptive reasoning effort, and model-aware Claude Fable 5.1 runtime guidance.
+`dsh-verified-control` is an opt-in hard control plane for DeepSeek Harness. It keeps the native observation-driven agent loop, sessions, compaction, sandbox, parallel tool execution, and subagent runtime, while owning the boundaries a probabilistic model should not own alone: Goal Contract, trusted World State, effective authority and budgets, verification, commit/rollback, external-effect reconciliation, incidents, delegation contracts, optional adaptive reasoning effort, model-aware Claude Fable 5.1 runtime guidance, and Fable thinking-prefix enforcement.
 
 The governing rule is: **the model may propose and observe; the harness decides what may commit and what counts as verified.**
 
@@ -44,6 +44,8 @@ Effective authority is `contract request ∩ deployment policy`. Tool-call, fail
 Goal completion is fail-closed: `update_goal(action=complete)` is denied until all declared success checks and invariants have deterministic verifier coverage and pass. Configured workspace mutations also verify invariants before execution and again before commit.
 
 Autonomous continuation is fail-closed too. At `agent/turn-stopping`, verified control converts hard no-progress or unsafe conditions — exhausted tool/failure/duration budgets, repeated-tool stalls, unresolved rollback failure, or unresolved external-effect review — into the native goal `blocked` phase. The existing `goal-round-driver` therefore remains the only owner of automatic rounds and round accounting; verified control never adds a parallel continuation loop.
+
+Claude Fable 5.1 thinking replay is also fail-closed. Before dispatching a Fable request that retains a replay-bound Fable reasoning block, the guard reconstructs the model-visible surface that preceded that block when it was produced and compares it with the current retained prefix, system prompt, and ordered tool definitions. A changed earlier message, partial compaction before a retained thinking block, system-prompt mutation, or tool-schema mutation yields `FABLE_PREFIX_MISMATCH`; an active goal is durably moved to `blocked` instead of sending a provider request known to violate Fable's prefix binding.
 
 The plugin records tool failures and control-plane verification/recovery failures as incidents with regression-eval candidates, turning real failures into future test coverage.
 
@@ -80,15 +82,15 @@ Claude Fable 5.1 gets an additional model-aware runtime-context overlay derived 
 
 #### What the model sees
 
-A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven. If a hard continuation condition is reached, the native goal state becomes `blocked`, so the next autonomous goal round is not scheduled. A Fable 5.1 route additionally receives the model/effort-aware guidance above through the existing runtime-context snapshot mechanism; other models receive no Fable contribution.
+A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven. If a hard continuation condition is reached, the native goal state becomes `blocked`, so the next autonomous goal round is not scheduled. A Fable 5.1 route additionally receives the model/effort-aware guidance above through the existing runtime-context snapshot mechanism; other models receive no Fable contribution. Prefix-binding validation is harness-side and adds no normal model-facing reminder; only a mismatch becomes an explicit request error and blocked-goal reason.
 
 #### Token effect
 
-The static policy and control-tool schemas add a fixed request-prefix cost while this plugin is mounted. Data-dependent contract, World State, transaction, incident, and delegation values add tokens only through ordinary tool calls/results that enter retained conversation history; the plugin does not continuously serialize the full control state into every request. The Fable overlay is empty for other models. For Fable 5.1 it is emitted only when the complete runtime-context snapshot changes, so a stable route/effort does not add a fresh reminder every request.
+The static policy and control-tool schemas add a fixed request-prefix cost while this plugin is mounted. Data-dependent contract, World State, transaction, incident, and delegation values add tokens only through ordinary tool calls/results that enter retained conversation history; the plugin does not continuously serialize the full control state into every request. The Fable overlay is empty for other models. For Fable 5.1 it is emitted only when the complete runtime-context snapshot changes, so a stable route/effort does not add a fresh reminder every request. Prefix-binding inspection is local replay analysis and adds no request tokens.
 
 #### KV Cache effect
 
-The static policy text and tool definitions are stable for a mounted composition, so they remain part of the reusable request prefix. Adaptive effort changes request configuration rather than rewriting prior messages. Fable-specific guidance is a dynamic runtime-context snapshot, which DeepSeek Harness appends as a durable user-role message and explicitly marks as superseding older runtime-context snapshots. This preserves append-only conversation history instead of mutating earlier system/tool/message prefix material when effort-specific guidance changes.
+The static policy text and tool definitions are stable for a mounted composition, so they remain part of the reusable request prefix. Adaptive effort changes request configuration rather than rewriting prior messages. Fable-specific guidance is a dynamic runtime-context snapshot, which DeepSeek Harness appends as a durable user-role message and explicitly marks as superseding older runtime-context snapshots. This preserves append-only conversation history instead of mutating earlier system/tool/message prefix material when effort-specific guidance changes. The prefix guard rejects a request when a retained Fable thinking block would otherwise cross a cache-invalidating prefix mutation.
 
 ## Known Limitations and Deferred Work
 
@@ -102,6 +104,7 @@ No runtime invariant companion is published because the authoritative control st
 - Delegation `resourceScope` is enforced as a parent-side contract; enforcing it inside an out-of-process child requires equivalent provider/tool-filter support.
 - Adaptive effort cannot infer which identifiers a selected provider/model supports.
 - Fable route detection runs during prompt assembly, before the current step's `agent/request` waterfall. A middleware that changes a non-Fable/blank route to Fable only inside that waterfall receives the overlay on the next assembled step, not retroactively on the already-assembled first request.
+- The generic Harness LLM seam does not currently expose Anthropic's beta `thinking.block_binding.prefix_mismatch_behavior: "drop_block"`. Verified control therefore fails closed on a detected prefix mismatch. To continue, start a fresh conversation or compact the replay-bound Fable thinking block itself out of retained history; replacing only older history while retaining that block remains invalid by design.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -109,6 +112,6 @@ No runtime invariant companion is published because the authoritative control st
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, `agent/turn-stopping`, `agent/request`, and append-only runtime context) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
+Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, `agent/turn-stopping`, `agent/request`, append-only runtime context, and durable session/surface replay) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
 
 </details>

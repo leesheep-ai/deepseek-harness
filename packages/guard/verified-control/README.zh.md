@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-verified-control` 是 DeepSeek Harness 的可选强控制面。它保留原生 observation-driven Agent Loop、Session、Compaction、Sandbox、并行工具执行与 Subagent Runtime，同时接管概率模型不应独自拥有的边界：Goal Contract、可信 World State、有效权限与预算、验证、commit/rollback、外部副作用 reconciliation、Incident、Delegation Contract、可选动态 reasoning effort，以及模型感知的 Claude Fable 5.1 runtime guidance。
+`dsh-verified-control` 是 DeepSeek Harness 的可选强控制面。它保留原生 observation-driven Agent Loop、Session、Compaction、Sandbox、并行工具执行与 Subagent Runtime，同时接管概率模型不应独自拥有的边界：Goal Contract、可信 World State、有效权限与预算、验证、commit/rollback、外部副作用 reconciliation、Incident、Delegation Contract、可选动态 reasoning effort、模型感知的 Claude Fable 5.1 runtime guidance，以及 Fable thinking-prefix 强制校验。
 
 核心规则是：**模型可以提出方案和观察；Harness 决定什么允许提交，以及什么才算被验证。**
 
@@ -44,6 +44,8 @@ kind: "package-reference"
 Goal completion 采用 fail-closed：只有全部 success check 与 invariant 都具有确定性 verifier 覆盖并通过时，`update_goal(action=complete)` 才允许执行。配置为 workspace mutation 的工具在执行前和 commit 前都会验证 invariants。
 
 Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/failure/duration budget 耗尽、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
+
+Claude Fable 5.1 thinking replay 也采用 fail-closed。在派发一个仍保留 replay-bound Fable reasoning block 的 Fable 请求前，guard 会重建该 block 生成时位于它之前的 model-visible surface，并与当前 retained prefix、system prompt 和有序 tool definitions 比较。如果更早消息被替换、只 compact 了 retained thinking 之前的历史、system prompt 被修改或 tool schema 被修改，就产生 `FABLE_PREFIX_MISMATCH`；若当前存在 active Goal，则会持久化转为 `blocked`，而不是继续发送已知会违反 Fable prefix binding 的 provider request。
 
 工具失败以及控制面的验证/恢复失败会记录为 Incident，并附带 regression-eval candidate，把真实失败转化为后续评测覆盖。
 
@@ -80,15 +82,15 @@ Claude Fable 5.1 会额外获得一层模型感知的 runtime-context overlay，
 
 #### 模型看到什么
 
-一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。达到硬 continuation condition 时，原生 Goal 会进入 `blocked`，因此不会再调度下一次自动 goal round。Fable 5.1 路由还会通过现有 runtime-context snapshot 机制获得上述模型/effort 感知 guidance；其他模型不会收到 Fable contribution。
+一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。达到硬 continuation condition 时，原生 Goal 会进入 `blocked`，因此不会再调度下一次自动 goal round。Fable 5.1 路由还会通过现有 runtime-context snapshot 机制获得上述模型/effort 感知 guidance；其他模型不会收到 Fable contribution。Prefix-binding 校验完全由 Harness 执行，正常路径不会增加模型提醒；只有 mismatch 才会变成显式 request error 与 blocked-goal reason。
 
 #### Token 影响
 
-插件挂载后，静态 policy 与控制工具 schema 会产生固定的 request-prefix token 成本。依数据变化的 Contract、World State、Transaction、Incident 与 Delegation 内容只会通过普通工具调用/结果进入保留的对话历史；插件不会在每次请求中持续序列化全部控制状态。Fable overlay 对其他模型为空。对于 Fable 5.1，它只会在完整 runtime-context snapshot 发生变化时写入，因此稳定 route/effort 不会每次 request 都追加一条提醒。
+插件挂载后，静态 policy 与控制工具 schema 会产生固定的 request-prefix token 成本。依数据变化的 Contract、World State、Transaction、Incident 与 Delegation 内容只会通过普通工具调用/结果进入保留的对话历史；插件不会在每次请求中持续序列化全部控制状态。Fable overlay 对其他模型为空。对于 Fable 5.1，它只会在完整 runtime-context snapshot 发生变化时写入，因此稳定 route/effort 不会每次 request 都追加一条提醒。Prefix-binding inspection 是本地 replay 分析，不增加 request token。
 
 #### KV Cache 影响
 
-固定组合中的静态 policy 文本与工具定义保持稳定，因此可以留在可复用 request prefix。Adaptive effort 只修改 request config，不改写历史消息。Fable-specific guidance 使用动态 runtime-context snapshot：DeepSeek Harness 会把它作为持久 user-role message 追加，并明确标记新 snapshot supersede 旧 runtime-context snapshot。因此 effort-specific guidance 变化时仍保持 append-only conversation history，而不是修改之前的 system/tool/message prefix。
+固定组合中的静态 policy 文本与工具定义保持稳定，因此可以留在可复用 request prefix。Adaptive effort 只修改 request config，不改写历史消息。Fable-specific guidance 使用动态 runtime-context snapshot：DeepSeek Harness 会把它作为持久 user-role message 追加，并明确标记新 snapshot supersede 旧 runtime-context snapshot。因此 effort-specific guidance 变化时仍保持 append-only conversation history，而不是修改之前的 system/tool/message prefix。Prefix guard 会拒绝任何让 retained Fable thinking block 跨越 cache-invalidating prefix mutation 的请求。
 
 ## 已知限制与延后工作
 
@@ -102,6 +104,7 @@ Claude Fable 5.1 会额外获得一层模型感知的 runtime-context overlay，
 - Delegation `resourceScope` 当前是父侧 contract；若要在进程外 child 内强制，需要 provider/tool-filter 提供等价能力。
 - Adaptive effort 无法推断具体 provider/model 支持哪些 effort ID。
 - Fable route detection 发生在 prompt assembly 阶段，早于当前 step 的 `agent/request` waterfall。如果 middleware 只在该 waterfall 内把 non-Fable/空 route 改为 Fable，已经完成 assembly 的第一次 request 不会被追溯修改，而会从下一次 assembled step 开始获得 overlay。
+- Harness 通用 LLM seam 当前没有暴露 Anthropic beta 的 `thinking.block_binding.prefix_mismatch_behavior: "drop_block"`。因此 Verified Control 在检测到 prefix mismatch 时 fail-closed。需要继续时，应开启新 conversation，或把 replay-bound Fable thinking block 本身一并 compact 出 retained history；如果只替换它之前的旧历史却继续保留该 block，按设计仍然属于无效 prefix。
 
 <a id="dev-note"></a>
 ### 开发说明
@@ -109,6 +112,6 @@ Claude Fable 5.1 会额外获得一层模型感知的 runtime-context overlay，
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/turn-stopping`、`agent/request` 与 append-only runtime context）承载 hard-control 语义，不 fork core loop。
+除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/turn-stopping`、`agent/request`、append-only runtime context 与 durable session/surface replay）承载 hard-control 语义，不 fork core loop。
 
 </details>
