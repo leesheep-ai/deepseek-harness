@@ -1,7 +1,8 @@
 import { lstat, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { installTransactionRuntime } from '../src/transaction-runtime.ts'
 import { captureFileTransaction, FileTransactionLocks, rollbackFileTransaction } from '../src/transaction.ts'
 
 class LocalFs {
@@ -53,5 +54,29 @@ describe('filesystem transaction engine', () => {
       locks.run('a', async () => { order.push(3) }),
     ])
     expect(order).toEqual([1, 2, 3])
+  })
+
+  it('fails closed when a configured mutation tool has no trackable file_path', async () => {
+    let execute: ((exec: any, next: () => Promise<any>) => Promise<any>) | undefined
+    const ctx = {
+      on(event: string, handler: any) {
+        if (event === 'tools/execute') execute = handler
+      },
+    } as any
+    installTransactionRuntime(ctx, { mutationTools: ['custom_mutation'], cleanupTimeoutMs: 100 })
+    const next = vi.fn(async () => ({ content: [], isError: false }))
+
+    const result = await execute?.({
+      agent: {},
+      name: 'custom_mutation',
+      arguments: { target: 'x' },
+      signal: new AbortController().signal,
+    }, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      isError: true,
+      error: { info: { code: 'MUTATION_PATH_REQUIRED' } },
+    })
   })
 })
