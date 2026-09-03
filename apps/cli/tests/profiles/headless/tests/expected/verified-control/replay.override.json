@@ -1,0 +1,42 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_verified_goal", "name": "create_goal", "argumentsDelta": "{\"objective\":\"Establish the verified-control snapshot contract\",\"max_goal_rounds\":8}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_verified_goal", "name": "create_goal", "arguments": "{\"objective\":\"Establish the verified-control snapshot contract\",\"max_goal_rounds\":8}" } },
+      { "type": "usage", "usage": { "inputTokens": 24, "outputTokens": 7 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_verified_contract", "name": "control_set_contract", "argumentsDelta": "{\"contract\":{\"objective\":\"Establish the verified-control snapshot contract\",\"success\":[{\"description\":\"workspace exists\",\"verifier\":{\"kind\":\"file_exists\",\"path\":\".\"}}],\"invariants\":[{\"description\":\"workspace remains available\",\"verifier\":{\"kind\":\"file_exists\",\"path\":\".\"}}],\"nonGoals\":[\"Do not mutate files or use the network\"],\"requestedAuthority\":{\"mutation\":false,\"network\":false,\"irreversible\":false,\"delegation\":false},\"requestedBudget\":{\"maxToolCalls\":16,\"maxFailures\":4,\"maxDelegations\":1,\"maxDurationMs\":60000,\"maxRepeatedToolCalls\":4}}}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_verified_contract", "name": "control_set_contract", "arguments": "{\"contract\":{\"objective\":\"Establish the verified-control snapshot contract\",\"success\":[{\"description\":\"workspace exists\",\"verifier\":{\"kind\":\"file_exists\",\"path\":\".\"}}],\"invariants\":[{\"description\":\"workspace remains available\",\"verifier\":{\"kind\":\"file_exists\",\"path\":\".\"}}],\"nonGoals\":[\"Do not mutate files or use the network\"],\"requestedAuthority\":{\"mutation\":false,\"network\":false,\"irreversible\":false,\"delegation\":false},\"requestedBudget\":{\"maxToolCalls\":16,\"maxFailures\":4,\"maxDelegations\":1,\"maxDurationMs\":60000,\"maxRepeatedToolCalls\":4}}}" } },
+      { "type": "usage", "usage": { "inputTokens": 42, "outputTokens": 18 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_verified_state", "name": "control_get_state", "argumentsDelta": "{}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_verified_state", "name": "control_get_state", "arguments": "{}" } },
+      { "type": "usage", "usage": { "inputTokens": 58, "outputTokens": 4 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "VERIFIED_CONTROL_READY" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "VERIFIED_CONTROL_READY" } },
+      { "type": "usage", "usage": { "inputTokens": 72, "outputTokens": 3 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]
