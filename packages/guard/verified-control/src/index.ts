@@ -16,7 +16,13 @@ import { EMPTY_CONTROL_STATE, type VerifiedControlState } from './types.ts'
 
 export * from './types.ts'
 export * from './fold.ts'
-export * from './state.ts'
+export {
+  attestFact,
+  invalidateFact,
+  publicFactValues,
+  putFact,
+  validFact,
+} from './state.ts'
 export * from './transaction.ts'
 export * from './verifier.ts'
 export * from './contract.ts'
@@ -24,8 +30,17 @@ export * from './contract.ts'
 export const name = 'verified-control'
 export const inject = ['fs', 'goals', 'sessionProjections', 'systemPrompt', 'tools']
 
-declare module '@deepseek-ai/dsh-session' { interface SessionEventMap { 'verified-control/snapshot': { state: VerifiedControlState } } }
-declare module '@deepseek-ai/dsh-session-projection' { interface SessionProjectionStateMap { 'verified-control': VerifiedControlState } }
+declare module '@deepseek-ai/dsh-session' {
+  interface SessionEventMap {
+    'verified-control/snapshot': { state: VerifiedControlState }
+  }
+}
+
+declare module '@deepseek-ai/dsh-session-projection' {
+  interface SessionProjectionStateMap {
+    'verified-control': VerifiedControlState
+  }
+}
 
 export interface Config {
   enforceWithoutContract?: boolean

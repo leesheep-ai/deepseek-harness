@@ -1,25 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { randomUUID } from 'node:crypto'
 import { captureFileTransaction, FileTransactionLocks, rollbackFileTransaction } from './transaction.ts'
+import { appendState, stateOf } from './runtime-state.ts'
 import type { Incident, OpenTransaction, VerifiedControlState } from './types.ts'
 import { verifyChecks } from './verifier.ts'
 
 export interface TransactionRuntimeConfig {
   mutationTools: readonly string[]
   cleanupTimeoutMs: number
-}
-
-function stateOf(ctx: Context, agent: Agent): VerifiedControlState {
-  return ctx.sessionProjections.stateOf(agent.session, 'verified-control')
-}
-
-function appendState(agent: Agent, transform: (state: VerifiedControlState) => VerifiedControlState): VerifiedControlState {
-  const next = transform(stateOf(agent.ctx, agent))
-  agent.session.append('verified-control/snapshot', { state: structuredClone(next) } satisfies SessionEventMap['verified-control/snapshot'])
-  return next
 }
 
 function withoutTransaction(state: VerifiedControlState, id: string): VerifiedControlState {
@@ -93,8 +83,11 @@ export function installTransactionRuntime(ctx: Context, config: TransactionRunti
 
     return locks.run(path, async () => {
       const tx = await captureFileTransaction(ctx.fs, {
-        id: randomUUID(), tool: exec.name, path,
-        cwd: agent.session.header.cwd, signal: exec.signal,
+        id: randomUUID(),
+        tool: exec.name,
+        path,
+        ...(agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd }),
+        signal: exec.signal,
       })
       appendState(agent, state => ({ ...state, openTransactions: { ...state.openTransactions, [tx.id]: tx } }))
 

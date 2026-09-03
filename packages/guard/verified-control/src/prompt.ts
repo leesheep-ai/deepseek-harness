@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 const VERIFIED_CONTROL_PROMPT = `When verified-control tools are available, treat them as the hard control plane for long-running work.
 - Before mutation, network, irreversible work, or delegation, make sure there is a durable goal and set a Goal Contract with objective, deterministic success checks, safety invariants, non-goals, requested authority, and finite budgets.

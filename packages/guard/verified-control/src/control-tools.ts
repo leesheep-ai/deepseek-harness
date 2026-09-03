@@ -2,22 +2,178 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { parseContract, parseVerificationSpec } from './contract.ts'
-import { attestFact, invalidateFact, putFact, validFacts } from './state.ts'
-import { appendState, factFromArgs, hasCurrentGoal, setContract, stateOf } from './runtime-state.ts'
-import { verifySpec } from './verifier.ts'
-import { reconcileExternalEffect } from './external-effect-runtime.ts'
 import { prepareDelegation } from './delegation-runtime.ts'
-import type { DelegationContract } from './types.ts'
+import { reconcileExternalEffect } from './external-effect-runtime.ts'
+import { appendState, factFromArgs, hasCurrentGoal, setContract, stateOf } from './runtime-state.ts'
+import { attestFact, invalidateFact, putFact, validFacts } from './state.ts'
+import { verifySpec } from './verifier.ts'
+
+function toJsonValue(value: unknown): JsonValue {
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) throw new Error('verified-control tool produced a non-JSON value')
+  return JSON.parse(serialized) as JsonValue
+}
+
+const jsonOutput = {
+  schema: { type: 'json' as const },
+  render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+}
 
 export function registerControlTools(ctx: Context, requireGoalForControlledWork: boolean): void {
-  const jsonOutput = { schema: {}, render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }] }
-  ctx.tools.register(defineTool({ name: 'control_set_contract', description: 'Set the immutable durable Goal Contract for the current goal. Deployment policy can only reduce requested authority and budgets.', parameters: { contract: { type: 'json', required: true } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_set_contract requires an agent'); if (requireGoalForControlledWork && !hasCurrentGoal(ctx, exec.agent)) throw new Error('create a durable goal before setting its Goal Contract'); const contract = parseContract(args.contract); setContract(exec.agent, contract); return Promise.resolve({ accepted: true, objective: contract.objective }) } }))
-  ctx.tools.register(defineTool({ name: 'control_amend_contract', description: 'Replace the current Goal Contract only after explicit human approval for a genuine scope change.', parameters: { contract: { type: 'json', required: true } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_amend_contract requires an agent'); const contract = parseContract(args.contract); setContract(exec.agent, contract, true); return Promise.resolve({ accepted: true, objective: contract.objective }) } }))
-  ctx.tools.register(defineTool({ name: 'control_observe_fact', description: 'Record a model observation in durable World State. This does not certify the fact.', parameters: { key: { type: 'string', required: true }, value: { type: 'json', required: true }, source: { type: 'string' }, confidence: { type: 'number' }, ttl_ms: { type: 'integer' }, dependencies: { type: 'array', items: { type: 'string' } } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_observe_fact requires an agent'); const fact = factFromArgs(args); appendState(exec.agent, state => putFact(state, fact)); return Promise.resolve({ recorded: true, key: fact.key, certified: false }) } }))
-  ctx.tools.register(defineTool({ name: 'control_attest_fact', description: 'Human-attest an existing World State fact. Policy always asks for explicit approval.', parameters: { key: { type: 'string', required: true } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_attest_fact requires an agent'); appendState(exec.agent, state => attestFact(state, args.key, 'human')); return Promise.resolve({ attested: true, key: args.key }) } }))
-  ctx.tools.register(defineTool({ name: 'control_verify_fact', description: 'Certify an existing fact only after an independent deterministic verifier passes.', parameters: { key: { type: 'string', required: true }, verifier: { type: 'json', required: true } }, output: jsonOutput, async execute(args, exec) { if (exec.agent === undefined) throw new Error('control_verify_fact requires an agent'); const state = stateOf(ctx, exec.agent); const fact = state.facts[args.key]; if (fact === undefined || !fact.valid) throw new Error(`fact ${args.key} is missing or invalid`); const spec = parseVerificationSpec(args.verifier); if (spec.kind === 'fact_equals') throw new Error('control_verify_fact cannot certify a fact by asking that same fact to verify itself'); const result = await verifySpec(ctx, state, spec, exec.signal); if (!result.passed) throw new Error(`independent verifier failed: ${result.reason}`); appendState(exec.agent, current => attestFact(current, args.key, `verifier:${spec.kind}`)); return { verified: true, key: args.key, by: spec.kind } } }))
-  ctx.tools.register(defineTool({ name: 'control_invalidate_fact', description: 'Invalidate a World State fact and all dependent facts.', parameters: { key: { type: 'string', required: true } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_invalidate_fact requires an agent'); appendState(exec.agent, state => invalidateFact(state, args.key)); return Promise.resolve({ invalidated: true, key: args.key }) } }))
-  ctx.tools.register(defineTool({ name: 'control_prepare_delegation', description: 'Prepare a typed delegation contract before invoking a configured subagent tool.', parameters: { objective: { type: 'string', required: true }, expected_evidence: { type: 'array', required: true, items: { type: 'string' } }, resource_scope: { type: 'array', items: { type: 'string' } } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_prepare_delegation requires an agent'); let delegation: DelegationContract | undefined; appendState(exec.agent, state => { const prepared = prepareDelegation(state, { objective: args.objective, expectedEvidence: args.expected_evidence, resourceScope: args.resource_scope ?? [] }); delegation = prepared.delegation; return prepared.state }); return Promise.resolve({ prepared: true, delegation }) } }))
-  ctx.tools.register(defineTool({ name: 'control_reconcile_external_effect', description: 'Resolve an uncertain external side effect after explicit human review. Use confirmed, not-applied, or compensated based on independent evidence.', parameters: { id: { type: 'string', required: true }, resolution: { type: 'string', required: true, enum: ['confirmed', 'not-applied', 'compensated'] }, detail: { type: 'string' } }, output: jsonOutput, execute(args, exec) { if (exec.agent === undefined) throw new Error('control_reconcile_external_effect requires an agent'); const resolution = args.resolution as 'confirmed' | 'not-applied' | 'compensated'; appendState(exec.agent, state => reconcileExternalEffect(state, args.id, resolution, args.detail)); return Promise.resolve({ reconciled: true, id: args.id, resolution }) } }))
-  ctx.tools.register(defineTool({ name: 'control_get_state', description: 'Read durable verified-control state with freshness-aware facts and recovery state.', parameters: {}, output: jsonOutput, execute(_args, exec) { if (exec.agent === undefined) throw new Error('control_get_state requires an agent'); const state = stateOf(ctx, exec.agent); return Promise.resolve({ contract: state.contract, facts: validFacts(state), openTransactions: state.openTransactions, externalEffects: state.externalEffects, incidents: state.incidents, budgets: { toolCalls: state.toolCalls, failures: state.failures }, trajectory: { consecutiveFailures: state.consecutiveFailures, repeatedToolCalls: state.lastTool.repeated, recoveries: state.recoveries, delegations: state.delegations }, delegationContracts: state.delegationContracts }) } }))
+  ctx.tools.register(defineTool({
+    name: 'control_set_contract',
+    description: 'Set the immutable durable Goal Contract for the current goal. Deployment policy can only reduce requested authority and budgets.',
+    parameters: { contract: { type: 'json', required: true } },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_set_contract requires an agent')
+      if (requireGoalForControlledWork && !hasCurrentGoal(ctx, exec.agent)) throw new Error('create a durable goal before setting its Goal Contract')
+      const contract = parseContract(args.contract)
+      setContract(exec.agent, contract)
+      return Promise.resolve(toJsonValue({ accepted: true, objective: contract.objective }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_amend_contract',
+    description: 'Replace the current Goal Contract only after explicit human approval for a genuine scope change.',
+    parameters: { contract: { type: 'json', required: true } },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_amend_contract requires an agent')
+      const contract = parseContract(args.contract)
+      setContract(exec.agent, contract, true)
+      return Promise.resolve(toJsonValue({ accepted: true, objective: contract.objective }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_observe_fact',
+    description: 'Record a model observation in durable World State. This does not certify the fact.',
+    parameters: {
+      key: { type: 'string', required: true },
+      value: { type: 'json', required: true },
+      source: { type: 'string' },
+      confidence: { type: 'number' },
+      ttl_ms: { type: 'integer' },
+      dependencies: { type: 'array', items: { type: 'string' } },
+    },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_observe_fact requires an agent')
+      const fact = factFromArgs(args)
+      appendState(exec.agent, state => putFact(state, fact))
+      return Promise.resolve(toJsonValue({ recorded: true, key: fact.key, certified: false }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_attest_fact',
+    description: 'Human-attest an existing World State fact. Policy always asks for explicit approval.',
+    parameters: { key: { type: 'string', required: true } },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_attest_fact requires an agent')
+      appendState(exec.agent, state => attestFact(state, args.key, 'human'))
+      return Promise.resolve(toJsonValue({ attested: true, key: args.key }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_verify_fact',
+    description: 'Certify an existing fact only after an independent deterministic verifier passes.',
+    parameters: { key: { type: 'string', required: true }, verifier: { type: 'json', required: true } },
+    output: jsonOutput,
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_verify_fact requires an agent')
+      const state = stateOf(ctx, exec.agent)
+      const fact = state.facts[args.key]
+      if (fact === undefined || !fact.valid) throw new Error(`fact ${args.key} is missing or invalid`)
+      const spec = parseVerificationSpec(args.verifier)
+      if (spec.kind === 'fact_equals') throw new Error('control_verify_fact cannot certify a fact by asking that same fact to verify itself')
+      const result = await verifySpec(ctx, state, spec, exec.signal)
+      if (!result.passed) throw new Error(`independent verifier failed: ${result.reason}`)
+      appendState(exec.agent, current => attestFact(current, args.key, `verifier:${spec.kind}`))
+      return toJsonValue({ verified: true, key: args.key, by: spec.kind })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_invalidate_fact',
+    description: 'Invalidate a World State fact and all dependent facts.',
+    parameters: { key: { type: 'string', required: true } },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_invalidate_fact requires an agent')
+      appendState(exec.agent, state => invalidateFact(state, args.key))
+      return Promise.resolve(toJsonValue({ invalidated: true, key: args.key }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_prepare_delegation',
+    description: 'Prepare a typed delegation contract before invoking a configured subagent tool.',
+    parameters: {
+      objective: { type: 'string', required: true },
+      expected_evidence: { type: 'array', required: true, items: { type: 'string' } },
+      resource_scope: { type: 'array', items: { type: 'string' } },
+    },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_prepare_delegation requires an agent')
+      let result: ReturnType<typeof prepareDelegation> | undefined
+      appendState(exec.agent, state => {
+        result = prepareDelegation(state, {
+          objective: args.objective,
+          expectedEvidence: args.expected_evidence,
+          resourceScope: args.resource_scope ?? [],
+        })
+        return result.state
+      })
+      if (result === undefined) throw new Error('failed to persist delegation contract')
+      return Promise.resolve(toJsonValue({ prepared: true, delegation: result.delegation }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_reconcile_external_effect',
+    description: 'Resolve an uncertain external side effect after explicit human review. Use confirmed, not-applied, or compensated based on independent evidence.',
+    parameters: {
+      id: { type: 'string', required: true },
+      resolution: { type: 'string', required: true, enum: ['confirmed', 'not-applied', 'compensated'] },
+      detail: { type: 'string' },
+    },
+    output: jsonOutput,
+    execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('control_reconcile_external_effect requires an agent')
+      appendState(exec.agent, state => reconcileExternalEffect(state, args.id, args.resolution, args.detail))
+      return Promise.resolve(toJsonValue({ reconciled: true, id: args.id, resolution: args.resolution }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'control_get_state',
+    description: 'Read durable verified-control state with freshness-aware facts and recovery state.',
+    parameters: {},
+    output: jsonOutput,
+    execute(_args, exec) {
+      if (exec.agent === undefined) throw new Error('control_get_state requires an agent')
+      const state = stateOf(ctx, exec.agent)
+      return Promise.resolve(toJsonValue({
+        contract: state.contract,
+        facts: validFacts(state),
+        openTransactions: state.openTransactions,
+        externalEffects: state.externalEffects,
+        incidents: state.incidents,
+        budgets: { toolCalls: state.toolCalls, failures: state.failures },
+        trajectory: {
+          consecutiveFailures: state.consecutiveFailures,
+          repeatedToolCalls: state.lastTool.repeated,
+          recoveries: state.recoveries,
+          delegations: state.delegations,
+        },
+        delegationContracts: state.delegationContracts,
+      }))
+    },
+  }))
 }

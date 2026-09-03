@@ -53,14 +53,14 @@ export async function verifySpec(
       command: spec.command,
       ...(spec.workdir === undefined ? {} : { workdir: spec.workdir }),
       ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
-      signal,
+      ...(signal === undefined ? {} : { signal }),
     })
     const result = await shell.run(resolved)
     const passed = result.exitCode === 0 && !result.timedOut && !result.aborted
     return { passed, reason: passed ? 'command exited successfully' : `command failed with exit ${String(result.exitCode)}` }
   }
 
-  const target = await ctx.fs.resolve(spec.path, { signal })
+  const target = await ctx.fs.resolve(spec.path, signal === undefined ? undefined : { signal })
   const info = await ctx.fs.stat(target, signal)
   if (spec.kind === 'file_exists') {
     return { passed: info?.type === 'file', reason: info?.type === 'file' ? 'file exists' : 'file does not exist as a regular file' }
