@@ -46,10 +46,13 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Install workspace
         run: pnpm install --no-frozen-lockfile
+      - name: Build host package exports
+        run: pnpm run build:lib:host
       - name: Generate verified-control snapshot goldens
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
         env:
           DSH_SNAPSHOT: refresh
+          DSH_EXAMPLE_MODE: lib
         run: |
           pnpm exec vitest run --config vitest.expected.config.ts apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts
           git config user.name github-actions[bot]
@@ -64,6 +67,8 @@ jobs:
       - name: Run verified-control tests
         run: pnpm exec vitest run packages/guard/verified-control/tests packages/bundle/verified-control/tests
       - name: Replay verified-control recorded snapshot
+        env:
+          DSH_EXAMPLE_MODE: lib
         run: pnpm exec vitest run --config vitest.expected.config.ts apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts
       - name: Run package contract gates
         run: |
