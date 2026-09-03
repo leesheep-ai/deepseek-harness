@@ -1,13 +1,33 @@
+import type {} from '@deepseek-ai/dsh-goal'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { EMPTY_CONTROL_STATE, type Incident, type VerifiedControlState } from './types.ts'
 import { publicFactValues } from './state.ts'
 
 export interface VerifiedControlSnapshot { state: VerifiedControlState }
 
+/** Reset only state whose meaning is scoped to one durable Goal. */
+export function resetGoalScopedState(previous: VerifiedControlState): VerifiedControlState {
+  return {
+    ...previous,
+    contract: null,
+    contractGoalId: null,
+    toolCalls: 0,
+    failures: 0,
+    delegations: 0,
+    delegationContracts: {},
+    successfulTools: 0,
+    consecutiveFailures: 0,
+    lastTool: { signature: null, repeated: 0 },
+    startedAt: null,
+    recoveries: 0,
+  }
+}
+
 export function normalizeControlState(raw: Partial<VerifiedControlState>): VerifiedControlState {
   return {
     ...structuredClone(EMPTY_CONTROL_STATE),
     ...raw,
+    contractGoalId: raw.contractGoalId ?? null,
     facts: raw.facts ?? {},
     openTransactions: raw.openTransactions ?? {},
     externalEffects: raw.externalEffects ?? {},
@@ -26,6 +46,10 @@ function incident(kind: Incident['kind'], message: string, event: SessionEvent):
 export function applyVerifiedControlEvent(previous: VerifiedControlState = EMPTY_CONTROL_STATE, event: SessionEvent): VerifiedControlState {
   switch (event.type) {
     case 'verified-control/snapshot': return normalizeControlState(event.data.state)
+    case 'goal/change':
+      return event.data.operation === 'create' || event.data.operation === 'clear'
+        ? resetGoalScopedState(previous)
+        : previous
     case 'tool/call': {
       const signature = stableToolSignature(event.data.name, event.data.arguments)
       return { ...previous, lastTool: { signature, repeated: previous.lastTool.signature === signature ? previous.lastTool.repeated + 1 : 1 } }
