@@ -1,12 +1,18 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-goal'
+import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { resetGoalScopedState } from './fold.ts'
 import type { GoalContract, TrustedFact, VerifiedControlState } from './types.ts'
 
+export function currentGoal(ctx: Context, agent: Agent): GoalView | undefined {
+  try { return ctx.goals.get(agent) } catch { return undefined }
+}
+
 export function hasCurrentGoal(ctx: Context, agent: Agent): boolean {
-  try { return ctx.goals.get(agent) !== undefined } catch { return false }
+  const goal = currentGoal(ctx, agent)
+  return goal !== undefined && goal.phase !== 'complete'
 }
 
 export function stateOf(ctx: Context, agent: Agent): VerifiedControlState {
@@ -22,9 +28,25 @@ export function appendState(agent: Agent, transform: (state: VerifiedControlStat
 }
 
 export function setContract(agent: Agent, contract: GoalContract, replace = false): void {
+  const goal = currentGoal(agent.ctx, agent)
+  if (goal?.phase === 'complete') throw new Error('cannot bind a Goal Contract to a completed goal; create a new durable goal first')
+  if (goal !== undefined && contract.objective !== goal.objective) {
+    throw new Error(`Goal Contract objective must exactly match the current durable goal objective: ${JSON.stringify(goal.objective)}`)
+  }
+  const goalId = goal === undefined ? null : String(goal.id)
+  const now = Date.now()
   appendState(agent, current => {
-    if (!replace && current.contract !== null) throw new Error('Goal Contract is already set; use control_amend_contract with human approval')
-    return { ...current, contract: structuredClone(contract), startedAt: current.startedAt ?? Date.now() }
+    const sameGoal = current.contractGoalId === goalId
+    if (!replace && current.contract !== null && sameGoal) {
+      throw new Error('Goal Contract is already set for the current goal; use control_amend_contract with human approval')
+    }
+    const base = sameGoal ? current : resetGoalScopedState(current)
+    return {
+      ...base,
+      contract: structuredClone(contract),
+      contractGoalId: goalId,
+      startedAt: sameGoal ? (base.startedAt ?? now) : now,
+    }
   })
 }
 
