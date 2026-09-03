@@ -27,7 +27,13 @@ describe('verified control policy', () => {
     const healthy = fixture({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, contractGoalId: 'goal-1', failures: 0 })
     expect(baseToolDecision(healthy.ctx, config, exec(healthy.agent, 'write'))).toEqual({ kind: 'allow' })
     const failed = fixture({ ...EMPTY_CONTROL_STATE, contract: zeroTolerance, contractGoalId: 'goal-1', failures: 1 })
-    expect(baseToolDecision(failed.ctx, config, exec(failed.agent, 'write'))).toEqual(expect.objectContaining({ kind: 'deny', reason: expect.stringContaining('failure budget exceeded') }))
+    expect(baseToolDecision(failed.ctx, config, exec(failed.agent, 'write'))).toEqual(expect.objectContaining({ kind: 'deny', reason: expect.stringContaining('failure budget exhausted') }))
+  })
+  it('stops ordinary work exactly when a non-zero failure tolerance is reached', () => {
+    const below = fixture({ ...EMPTY_CONTROL_STATE, contract, contractGoalId: 'goal-1', failures: 4 })
+    expect(baseToolDecision(below.ctx, config, exec(below.agent, 'write'))).toEqual({ kind: 'allow' })
+    const exhausted = fixture({ ...EMPTY_CONTROL_STATE, contract, contractGoalId: 'goal-1', failures: 5 })
+    expect(baseToolDecision(exhausted.ctx, config, exec(exhausted.agent, 'write'))).toEqual(expect.objectContaining({ kind: 'deny', reason: expect.stringContaining('failure budget exhausted') }))
   })
   it('allows verified completion to commit at an exhausted operational budget boundary', () => {
     const { agent, ctx } = fixture({ ...EMPTY_CONTROL_STATE, contract, contractGoalId: 'goal-1', toolCalls: 20, failures: 5, startedAt: Date.now() - 200_000 })
