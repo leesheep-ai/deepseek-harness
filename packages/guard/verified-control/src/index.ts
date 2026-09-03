@@ -12,6 +12,7 @@ import { installExternalEffectRuntime } from './external-effect-runtime.ts'
 import { installDelegationRuntime } from './delegation-runtime.ts'
 import { installAdaptiveEffort } from './effort.ts'
 import { installContinuationGate } from './continuation-gate.ts'
+import { installFablePrefixGuard } from './fable-prefix.ts'
 import { installControlPrompt } from './prompt.ts'
 import { EMPTY_CONTROL_STATE, type VerifiedControlState } from './types.ts'
 
@@ -28,6 +29,7 @@ export * from './transaction.ts'
 export * from './verifier.ts'
 export * from './contract.ts'
 export * from './continuation-gate.ts'
+export * from './fable-prefix.ts'
 
 export const name = 'verified-control'
 export const inject = ['fs', 'goals', 'sessionProjections', 'systemPrompt', 'tools']
@@ -150,6 +152,7 @@ export function apply(ctx: Context, input: Config = {}): void {
   installExternalEffectRuntime(ctx, { irreversibleTools: policy.irreversibleTools })
   installDelegationRuntime(ctx, { delegationTools: policy.delegationTools })
   installContinuationGate(ctx, policy)
+  installFablePrefixGuard(ctx)
   installAdaptiveEffort(ctx, {
     enabled: input.adaptiveEffort ?? false,
     baseline: input.baselineReasoningEffort ?? 'high',
