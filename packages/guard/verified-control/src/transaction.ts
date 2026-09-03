@@ -1,78 +1,82 @@
-import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
-
-export interface FileSnapshot {
-  id: string
-  targetPath: string
-  snapshotPath: string
-  existedBefore: boolean
-}
+import { lstat as hostLstat, rm as hostRm } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
+import type { FileSystem, FsTarget } from '@deepseek-ai/dsh-fs'
+import type { OpenTransaction } from './types.ts'
 
 function within(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate)
+  const rel = relative(resolve(root), resolve(candidate))
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
-async function assertNoSymlinkParents(root: string, target: string): Promise<void> {
-  const rel = relative(root, target)
-  if (!within(root, target)) throw new Error(`path escapes workspace: ${target}`)
-  const parts = rel.split(sep).filter(Boolean)
-  let cursor = root
-  for (const part of parts.slice(0, -1)) {
-    cursor = join(cursor, part)
+export async function captureFileTransaction(
+  fs: FileSystem,
+  input: { id: string; tool: string; path: string; cwd?: string; signal?: AbortSignal },
+): Promise<OpenTransaction> {
+  const opts = { ...(input.cwd === undefined ? {} : { cwd: input.cwd }), ...(input.signal === undefined ? {} : { signal: input.signal }) }
+  const pathInfo = await fs.lstat(input.path, opts)
+  if (pathInfo?.type === 'symlink') throw new Error(`transaction target may not be a symbolic link: ${input.path}`)
+  const target = await fs.resolve(input.path, opts)
+  const info = await fs.stat(target, input.signal)
+  if (info !== undefined && info.type !== 'file') throw new Error(`transaction target is not a regular file: ${target.displayPath}`)
+  const before = info === undefined ? null : await fs.readText(target, input.signal)
+  return {
+    id: input.id,
+    tool: input.tool,
+    path: input.path,
+    displayPath: target.displayPath,
+    before,
+    openedAt: Date.now(),
+    status: 'open',
+    ...(input.cwd === undefined ? {} : { workspaceRoot: input.cwd }),
+  }
+}
+
+async function provenHostPath(fs: FileSystem, target: FsTarget, workspaceRoot: string | undefined): Promise<string | undefined> {
+  if (workspaceRoot === undefined) return undefined
+  const processPath = fs.processPath(target)
+  if (!isAbsolute(processPath) || !within(workspaceRoot, processPath)) return undefined
+  const roundTrip = fs.processPathFromHostPath(processPath)
+  if (roundTrip !== processPath) return undefined
+  try {
+    const info = await hostLstat(processPath)
+    if (!info.isFile() || info.isSymbolicLink()) return undefined
+  } catch {
+    return undefined
+  }
+  return processPath
+}
+
+export async function rollbackFileTransaction(
+  fs: FileSystem,
+  tx: OpenTransaction,
+  cleanupTimeoutMs = 10_000,
+): Promise<void> {
+  const signal = AbortSignal.timeout(cleanupTimeoutMs)
+  const target = await fs.resolve(tx.path, { ...(tx.workspaceRoot === undefined ? {} : { cwd: tx.workspaceRoot }), signal })
+  if (tx.before !== null) {
+    await fs.writeText(target, tx.before, undefined, signal)
+    return
+  }
+  const hostPath = await provenHostPath(fs, target, tx.workspaceRoot)
+  if (hostPath === undefined) throw new Error('new-file rollback cannot prove a host-backed workspace path; manual reconciliation is required')
+  await hostRm(hostPath, { force: true })
+}
+
+export class FileTransactionLocks {
+  private readonly tails = new Map<string, Promise<void>>()
+
+  async run<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>(resolveGate => { release = resolveGate })
+    const tail = previous.then(() => gate)
+    this.tails.set(key, tail)
+    await previous
     try {
-      const info = await lstat(cursor)
-      if (info.isSymbolicLink()) throw new Error(`symlink parent is not transactional: ${cursor}`)
-    } catch (error: unknown) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') break
-      throw error
+      return await task()
+    } finally {
+      release()
+      if (this.tails.get(key) === tail) this.tails.delete(key)
     }
   }
-}
-
-export function resolveWorkspacePath(workspace: string, path: string): string {
-  const root = resolve(workspace)
-  const target = resolve(root, normalize(path))
-  if (!within(root, target)) throw new Error(`path escapes workspace: ${path}`)
-  return target
-}
-
-export async function snapshotFile(
-  workspace: string,
-  transactionRoot: string,
-  path: string,
-): Promise<FileSnapshot> {
-  const targetPath = resolveWorkspacePath(workspace, path)
-  await assertNoSymlinkParents(resolve(workspace), targetPath)
-  const id = randomUUID()
-  const snapshotPath = join(transactionRoot, `${id}.snapshot`)
-  await mkdir(transactionRoot, { recursive: true })
-  let existedBefore = false
-  try {
-    const info = await stat(targetPath)
-    if (!info.isFile()) throw new Error(`transaction target is not a regular file: ${path}`)
-    existedBefore = true
-    await writeFile(snapshotPath, await readFile(targetPath))
-  } catch (error: unknown) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code !== 'ENOENT') throw error
-  }
-  return { id, targetPath, snapshotPath, existedBefore }
-}
-
-export async function rollbackFile(snapshot: FileSnapshot): Promise<void> {
-  if (snapshot.existedBefore) {
-    const bytes = await readFile(snapshot.snapshotPath)
-    await mkdir(dirname(snapshot.targetPath), { recursive: true })
-    await writeFile(snapshot.targetPath, bytes)
-  } else {
-    await rm(snapshot.targetPath, { force: true })
-  }
-  await rm(snapshot.snapshotPath, { force: true })
-}
-
-export async function commitFile(snapshot: FileSnapshot): Promise<void> {
-  await rm(snapshot.snapshotPath, { force: true })
 }

@@ -58,6 +58,7 @@ export interface OpenTransaction {
   before: string | null
   openedAt: number
   status: TransactionStatus
+  workspaceRoot?: string
   reason?: string
 }
 
