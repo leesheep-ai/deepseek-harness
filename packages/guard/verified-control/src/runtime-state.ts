@@ -9,7 +9,9 @@ export function hasCurrentGoal(ctx: Context, agent: Agent): boolean {
 }
 
 export function stateOf(ctx: Context, agent: Agent): VerifiedControlState {
-  return ctx.sessionProjections.stateOf(agent.session, 'verified-control')
+  const state = ctx.sessionProjections.stateOf(agent.session, 'verified-control')
+  if (state === undefined) throw new Error('verified-control projection is not registered in this agent composition')
+  return state
 }
 
 export function appendState(agent: Agent, transform: (state: VerifiedControlState) => VerifiedControlState): VerifiedControlState {

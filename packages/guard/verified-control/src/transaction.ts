@@ -12,10 +12,13 @@ export async function captureFileTransaction(
   fs: FileSystem,
   input: { id: string; tool: string; path: string; cwd?: string; signal?: AbortSignal },
 ): Promise<OpenTransaction> {
-  const opts = { ...(input.cwd === undefined ? {} : { cwd: input.cwd }), ...(input.signal === undefined ? {} : { signal: input.signal }) }
-  const pathInfo = await fs.lstat(input.path, opts)
+  const pathInfo = await fs.lstat(
+    input.path,
+    input.cwd === undefined ? undefined : { cwd: input.cwd },
+    input.signal,
+  )
   if (pathInfo?.type === 'symlink') throw new Error(`transaction target may not be a symbolic link: ${input.path}`)
-  const target = await fs.resolve(input.path, opts)
+  const target = await fs.resolve(input.path, { ...(input.cwd === undefined ? {} : { cwd: input.cwd }), ...(input.signal === undefined ? {} : { signal: input.signal }) })
   const info = await fs.stat(target, input.signal)
   if (info !== undefined && info.type !== 'file') throw new Error(`transaction target is not a regular file: ${target.displayPath}`)
   const before = info === undefined ? null : await fs.readText(target, input.signal)
