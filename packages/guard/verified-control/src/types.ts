@@ -18,80 +18,21 @@ export interface GoalContract {
   success: ContractCheck[]
   invariants: ContractCheck[]
   nonGoals: string[]
-  requestedAuthority: {
-    mutation: boolean
-    network: boolean
-    irreversible: boolean
-    delegation?: boolean
-  }
-  requestedBudget: {
-    maxToolCalls: number
-    maxFailures: number
-    maxDelegations?: number
-    maxDurationMs?: number
-    maxRepeatedToolCalls?: number
-  }
+  requestedAuthority: { mutation: boolean; network: boolean; irreversible: boolean; delegation?: boolean }
+  requestedBudget: { maxToolCalls: number; maxFailures: number; maxDelegations?: number; maxDurationMs?: number; maxRepeatedToolCalls?: number }
 }
 
 export type FactOrigin = 'model' | 'tool' | 'human' | 'verifier'
-
-export interface TrustedFact {
-  key: string
-  value: JsonValue
-  origin: FactOrigin
-  source: string
-  confidence: number
-  observedAt: number
-  validUntil?: number
-  verifiedBy: string[]
-  dependencies: string[]
-  valid: boolean
-}
-
+export interface TrustedFact { key: string; value: JsonValue; origin: FactOrigin; source: string; confidence: number; observedAt: number; validUntil?: number; verifiedBy: string[]; dependencies: string[]; valid: boolean }
 export type TransactionStatus = 'open' | 'rollback-failed'
-
-export interface OpenTransaction {
-  id: string
-  tool: string
-  path: string
-  displayPath: string
-  before: string | null
-  openedAt: number
-  status: TransactionStatus
-  workspaceRoot?: string
-  reason?: string
-}
-
+export interface OpenTransaction { id: string; tool: string; path: string; displayPath: string; before: string | null; openedAt: number; status: TransactionStatus; workspaceRoot?: string; reason?: string }
 export type ExternalEffectStatus = 'open' | 'review' | 'resolved'
 export type ExternalResolution = 'confirmed' | 'not-applied' | 'compensated'
-
-export interface ExternalEffect {
-  id: string
-  tool: string
-  callId?: string
-  openedAt: number
-  status: ExternalEffectStatus
-  resolution?: ExternalResolution
-  detail?: string
-}
-
-export type IncidentKind =
-  | 'tool-failure'
-  | 'verification-failure'
-  | 'rollback-failure'
-  | 'external-effect-review'
-  | 'budget-exhausted'
-  | 'repetition-stall'
-
-export interface Incident {
-  id: string
-  kind: IncidentKind
-  message: string
-  createdAt: number
-  tool?: string
-  callId?: string
-  regressionEval: { name: string; assertion: string }
-}
+export interface ExternalEffect { id: string; tool: string; callId?: string; openedAt: number; status: ExternalEffectStatus; resolution?: ExternalResolution; detail?: string }
+export type DelegationStatus = 'prepared' | 'running' | 'dispatched' | 'completed' | 'failed'
+export interface DelegationContract { id: string; objective: string; expectedEvidence: string[]; resourceScope: string[]; createdAt: number; status: DelegationStatus; tool?: string; callId?: string; error?: string }
+export type IncidentKind = 'tool-failure' | 'verification-failure' | 'rollback-failure' | 'external-effect-review' | 'budget-exhausted' | 'repetition-stall'
+export interface Incident { id: string; kind: IncidentKind; message: string; createdAt: number; tool?: string; callId?: string; regressionEval: { name: string; assertion: string } }
 
 export interface VerifiedControlState {
   contract: GoalContract | null
@@ -102,6 +43,7 @@ export interface VerifiedControlState {
   toolCalls: number
   failures: number
   delegations: number
+  delegationContracts: Record<string, DelegationContract>
   successfulTools: number
   consecutiveFailures: number
   lastTool: { signature: string | null; repeated: number }
@@ -110,17 +52,7 @@ export interface VerifiedControlState {
 }
 
 export const EMPTY_CONTROL_STATE: VerifiedControlState = {
-  contract: null,
-  facts: {},
-  openTransactions: {},
-  externalEffects: {},
-  incidents: [],
-  toolCalls: 0,
-  failures: 0,
-  delegations: 0,
-  successfulTools: 0,
-  consecutiveFailures: 0,
-  lastTool: { signature: null, repeated: 0 },
-  startedAt: null,
-  recoveries: 0,
+  contract: null, facts: {}, openTransactions: {}, externalEffects: {}, incidents: [],
+  toolCalls: 0, failures: 0, delegations: 0, delegationContracts: {}, successfulTools: 0,
+  consecutiveFailures: 0, lastTool: { signature: null, repeated: 0 }, startedAt: null, recoveries: 0,
 }

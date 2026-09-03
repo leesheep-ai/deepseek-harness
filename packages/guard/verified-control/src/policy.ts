@@ -3,6 +3,7 @@ import type { ToolExecution, PreToolDecision } from '@deepseek-ai/dsh-tools'
 import { hasCurrentGoal, stateOf } from './runtime-state.ts'
 import { verifyChecks } from './verifier.ts'
 import type { VerifiedControlState } from './types.ts'
+import { hasPreparedDelegation } from './delegation-runtime.ts'
 
 export interface PolicyConfig {
   enforceWithoutContract: boolean
@@ -10,13 +11,16 @@ export interface PolicyConfig {
   allowMutation: boolean
   allowNetwork: boolean
   allowIrreversible: boolean
+  allowDelegation: boolean
   maxToolCalls: number
   maxFailures: number
   maxDurationMs: number
   maxRepeatedToolCalls: number
+  maxDelegations: number
   mutationTools: string[]
   networkTools: string[]
   irreversibleTools: string[]
+  delegationTools: string[]
 }
 
 function maxFor(requested: number | undefined, platform: number): number { return Math.min(requested ?? platform, platform) }
@@ -31,7 +35,8 @@ export function baseToolDecision(ctx: Context, config: PolicyConfig, exec: ToolE
   const mutation = config.mutationTools.includes(exec.name)
   const network = config.networkTools.includes(exec.name)
   const irreversible = config.irreversibleTools.includes(exec.name)
-  const controlled = mutation || network || irreversible
+  const delegation = config.delegationTools.includes(exec.name)
+  const controlled = mutation || network || irreversible || delegation
   if (exec.name === 'control_get_state') return { kind: 'allow' }
   if (exec.name === 'control_attest_fact' || exec.name === 'control_amend_contract' || exec.name === 'control_reconcile_external_effect') return { kind: 'ask', reason: `${exec.name} requires explicit human approval` }
   if ((unresolvedExternalReview(state) || unresolvedTransaction(state)) && controlled) return { kind: 'deny', reason: 'verified-control recovery/reconciliation is required before more controlled work' }
@@ -39,6 +44,7 @@ export function baseToolDecision(ctx: Context, config: PolicyConfig, exec: ToolE
   if (state.failures >= maxFor(contract?.requestedBudget.maxFailures, config.maxFailures)) return { kind: 'deny', reason: 'verified-control failure budget exhausted' }
   if (contract !== null && state.startedAt !== null && Date.now() - state.startedAt >= maxFor(contract.requestedBudget.maxDurationMs, config.maxDurationMs)) return { kind: 'deny', reason: 'verified-control duration budget exhausted' }
   if (state.lastTool.repeated > maxFor(contract?.requestedBudget.maxRepeatedToolCalls, config.maxRepeatedToolCalls)) return { kind: 'deny', reason: 'verified-control repeated-tool stall detected; change strategy before retrying' }
+  if (delegation && state.delegations >= maxFor(contract?.requestedBudget.maxDelegations, config.maxDelegations)) return { kind: 'deny', reason: 'verified-control delegation budget exhausted' }
   if (exec.name === 'update_goal' && typeof exec.arguments === 'object' && exec.arguments !== null && (exec.arguments as Record<string, unknown>).action === 'complete' && contract === null) return { kind: 'deny', reason: 'goal completion requires a Goal Contract' }
   if (!controlled) return { kind: 'allow' }
   if (contract === null) return config.enforceWithoutContract ? { kind: 'deny', reason: 'controlled work requires a Goal Contract' } : { kind: 'allow' }
@@ -47,6 +53,8 @@ export function baseToolDecision(ctx: Context, config: PolicyConfig, exec: ToolE
   if (network && !(contract.requestedAuthority.network && config.allowNetwork)) return { kind: 'deny', reason: 'network authority was not granted by both contract and deployment policy' }
   if (irreversible && !config.allowIrreversible) return { kind: 'deny', reason: 'deployment policy forbids irreversible actions' }
   if (irreversible && contract.requestedAuthority.irreversible !== true) return { kind: 'ask', reason: 'Goal Contract did not pre-authorize this irreversible action' }
+  if (delegation && !(contract.requestedAuthority.delegation === true && config.allowDelegation)) return { kind: 'deny', reason: 'delegation authority was not granted by both contract and deployment policy' }
+  if (delegation && !hasPreparedDelegation(state)) return { kind: 'deny', reason: 'delegation requires control_prepare_delegation with objective, expected evidence, and resource scope' }
   return { kind: 'allow' }
 }
 
