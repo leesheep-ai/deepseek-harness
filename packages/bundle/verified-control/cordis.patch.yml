@@ -1,0 +1,31 @@
+# Optional verifiable-control layer over any base-backed profile.
+# Keep this configuration complete: DeepSeek Harness patch rows replace the
+# target row's whole config rather than deep-merging partial settings.
+
+- insert:
+    - id: verified-control
+      name: '@deepseek-ai/dsh-verified-control'
+      config:
+        enforceWithoutContract: true
+        requireGoalForControlledWork: true
+        allowMutation: true
+        allowNetwork: false
+        allowIrreversible: false
+        allowDelegation: true
+        maxToolCalls: 512
+        maxFailures: 32
+        maxDurationMs: 86400000
+        maxRepeatedToolCalls: 8
+        maxDelegations: 16
+        mutationTools: [write, edit]
+        networkTools: [web_search, web_fetch]
+        irreversibleTools: []
+        delegationTools: [subagent]
+        adaptiveEffort: false
+        baselineReasoningEffort: high
+        elevatedReasoningEffort: high
+        criticalReasoningEffort: xhigh
+        effortFailureThreshold: 2
+        effortCriticalFailureThreshold: 4
+        effortRepetitionThreshold: 4
+        cleanupTimeoutMs: 10000
