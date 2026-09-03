@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fablePrefixMismatchReason } from '../src/fable-prefix.ts'
+import { fablePrefixMismatchReason, isClaudeThinkingSourceForFable51 } from '../src/fable-prefix.ts'
 
 const tool = { name: 'read', description: 'Read a file', parameters: { type: 'object', properties: {} } }
 const user = {
@@ -14,27 +14,33 @@ const replacementUser = {
   content: [{ type: 'text', text: 'compacted' }],
   source: { kind: 'plugin', plugin: 'test' },
 }
-const assistant = {
-  id: 'a-1',
-  role: 'assistant',
-  content: [{ type: 'reasoning', text: 'signed reasoning' }],
-  source: {
-    kind: 'model',
-    provider: 'anthropic',
-    model: 'claude-fable-5-1',
-    replayState: { response: { kind: 'pi-ai' } },
-  },
-}
-const events = [
-  {
-    type: 'request/header', seq: 0, time: 1,
-    data: { header: { config: { provider: 'anthropic', model: 'claude-fable-5-1' }, system: 'stable', tools: [tool] }, reason: 'initial' },
-  },
-  { type: 'user/message', seq: 1, time: 2, data: user, surfaceOp: 'append' },
-  { type: 'assistant/message', seq: 2, time: 3, data: { turn: 1, step: 1, message: assistant }, surfaceOp: 'append' },
-] as any[]
 
-function fixture(messages: any[]) {
+function assistant(model = 'claude-fable-5-1', id = 'a-1') {
+  return {
+    id,
+    role: 'assistant',
+    content: [{ type: 'reasoning', text: 'signed reasoning' }],
+    source: {
+      kind: 'model',
+      provider: 'anthropic',
+      model,
+      replayState: {
+        response: { kind: 'pi-ai', version: 2, api: 'anthropic-messages', provider: 'anthropic', model, stopReason: 'stop' },
+        blocks: [{ type: 'reasoning', thinkingSignature: 'sig' }],
+      },
+    },
+  }
+}
+
+function fixture(messages: any[], boundAssistant = assistant()) {
+  const events = [
+    {
+      type: 'request/header', seq: 0, time: 1,
+      data: { header: { config: { provider: 'anthropic', model: boundAssistant.source.model }, system: 'stable', tools: [tool] }, reason: 'initial' },
+    },
+    { type: 'user/message', seq: 1, time: 2, data: user, surfaceOp: 'append' },
+    { type: 'assistant/message', seq: 2, time: 3, data: { turn: 1, step: 1, message: boundAssistant }, surfaceOp: 'append' },
+  ] as any[]
   const session = {
     seq: events.length,
     eventAt: (seq: number) => events[seq],
@@ -53,19 +59,40 @@ function assembly(system = 'stable', tools: any[] = [tool]) {
 }
 
 describe('Fable 5.1 thinking prefix binding', () => {
+  it('recognizes Claude thinking sources that Fable 5.1 can inherit', () => {
+    expect(isClaudeThinkingSourceForFable51('claude-fable-5-1')).toBe(true)
+    expect(isClaudeThinkingSourceForFable51('anthropic.claude-opus-5')).toBe(true)
+    expect(isClaudeThinkingSourceForFable51('publishers/anthropic/models/claude-mythos-5')).toBe(true)
+    expect(isClaudeThinkingSourceForFable51('gpt-5.6')).toBe(false)
+  })
+
   it('accepts the exact historical message, system, and tool prefix', () => {
-    expect(fablePrefixMismatchReason(fixture([user, assistant]), assembly())).toBeUndefined()
+    const bound = assistant()
+    expect(fablePrefixMismatchReason(fixture([user, bound], bound), assembly())).toBeUndefined()
+  })
+
+  it('checks preserved thinking inherited from an older Claude model', () => {
+    const bound = assistant('claude-opus-5', 'a-opus')
+    expect(fablePrefixMismatchReason(fixture([replacementUser, bound], bound), assembly()))
+      .toContain('model-visible messages before Claude thinking block')
+  })
+
+  it('ignores replay-bound reasoning from non-Claude models', () => {
+    const bound = assistant('gpt-5.6', 'a-gpt')
+    expect(fablePrefixMismatchReason(fixture([replacementUser, bound], bound), assembly())).toBeUndefined()
   })
 
   it('detects an earlier model-visible message replacement such as partial compaction', () => {
-    expect(fablePrefixMismatchReason(fixture([replacementUser, assistant]), assembly()))
-      .toContain('model-visible messages before Fable thinking block')
+    const bound = assistant()
+    expect(fablePrefixMismatchReason(fixture([replacementUser, bound], bound), assembly()))
+      .toContain('model-visible messages before Claude thinking block')
   })
 
   it('detects system prompt and tool definition changes', () => {
-    expect(fablePrefixMismatchReason(fixture([user, assistant]), assembly('changed')))
+    const bound = assistant()
+    expect(fablePrefixMismatchReason(fixture([user, bound], bound), assembly('changed')))
       .toContain('system prompt changed')
-    expect(fablePrefixMismatchReason(fixture([user, assistant]), assembly('stable', [{ ...tool, description: 'changed' }])))
+    expect(fablePrefixMismatchReason(fixture([user, bound], bound), assembly('stable', [{ ...tool, description: 'changed' }])))
       .toContain('tool definitions changed')
   })
 })
