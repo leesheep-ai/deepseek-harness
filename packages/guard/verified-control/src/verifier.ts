@@ -3,7 +3,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-shell'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { validFact } from './state.ts'
-import type { ContractCheck, VerificationSpec, VerifiedControlState } from './types.ts'
+import type { ContractCheck, GoalContract, VerificationSpec, VerifiedControlState } from './types.ts'
 
 export interface CheckResult {
   passed: boolean
@@ -16,6 +16,14 @@ export interface ContractVerification {
   coverage: number
   results: CheckResult[]
 }
+
+/** Deployment-owned policy for verifier operations that can execute code. */
+export interface VerifierPolicy {
+  /** Exact shell command strings trusted to run as deterministic verifiers. */
+  commandAllowlist: readonly string[]
+}
+
+export const DEFAULT_VERIFIER_POLICY: VerifierPolicy = Object.freeze({ commandAllowlist: Object.freeze([]) })
 
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
   if (left === right) return true
@@ -32,11 +40,37 @@ function jsonEqual(left: JsonValue, right: JsonValue): boolean {
       && jsonEqual(left[key] as JsonValue, right[key] as JsonValue))
 }
 
+/** Explain a deployment-policy rejection for one verifier, if any. */
+export function verifierPolicyIssue(spec: VerificationSpec, policy: VerifierPolicy): string | undefined {
+  if (spec.kind !== 'command_succeeds') return undefined
+  if (spec.workdir !== undefined) {
+    return 'command_succeeds workdir overrides are disabled; encode any required directory in a deployment-allowlisted command'
+  }
+  if (!policy.commandAllowlist.includes(spec.command)) {
+    return `command_succeeds is disabled for non-allowlisted command ${JSON.stringify(spec.command)}`
+  }
+  return undefined
+}
+
+/** Reject an impossible or unauthorized Goal Contract before work begins. */
+export function contractVerifierPolicyIssue(contract: GoalContract, policy: VerifierPolicy): string | undefined {
+  for (const [scope, checks] of [['success', contract.success], ['invariants', contract.invariants]] as const) {
+    for (let index = 0; index < checks.length; index += 1) {
+      const verifier = checks[index]?.verifier
+      if (verifier === undefined) continue
+      const issue = verifierPolicyIssue(verifier, policy)
+      if (issue !== undefined) return `contract.${scope}[${index}]: ${issue}`
+    }
+  }
+  return undefined
+}
+
 export async function verifySpec(
   ctx: Context,
   state: VerifiedControlState,
   spec: VerificationSpec,
   signal?: AbortSignal,
+  policy: VerifierPolicy = DEFAULT_VERIFIER_POLICY,
 ): Promise<{ passed: boolean; reason: string }> {
   if (spec.kind === 'fact_equals') {
     const fact = state.facts[spec.key]
@@ -47,17 +81,18 @@ export async function verifySpec(
   }
 
   if (spec.kind === 'command_succeeds') {
+    const policyIssue = verifierPolicyIssue(spec, policy)
+    if (policyIssue !== undefined) return { passed: false, reason: policyIssue }
     const shell = ctx.get('shell')
     if (shell === undefined) return { passed: false, reason: 'shell verifier is unavailable in this composition' }
     const resolved = shell.resolve({
       command: spec.command,
-      ...(spec.workdir === undefined ? {} : { workdir: spec.workdir }),
       ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
       ...(signal === undefined ? {} : { signal }),
     })
     const result = await shell.run(resolved)
     const passed = result.exitCode === 0 && !result.timedOut && !result.aborted
-    return { passed, reason: passed ? 'command exited successfully' : `command failed with exit ${String(result.exitCode)}` }
+    return { passed, reason: passed ? 'allowlisted command exited successfully' : `allowlisted command failed with exit ${String(result.exitCode)}` }
   }
 
   const target = await ctx.fs.resolve(spec.path, signal === undefined ? undefined : { signal })
@@ -83,6 +118,7 @@ export async function verifyChecks(
   state: VerifiedControlState,
   checks: ContractCheck[],
   signal?: AbortSignal,
+  policy: VerifierPolicy = DEFAULT_VERIFIER_POLICY,
 ): Promise<ContractVerification> {
   const results: CheckResult[] = []
   let machineVerifiable = 0
@@ -93,7 +129,7 @@ export async function verifyChecks(
     }
     machineVerifiable += 1
     try {
-      const result = await verifySpec(ctx, state, check.verifier, signal)
+      const result = await verifySpec(ctx, state, check.verifier, signal, policy)
       results.push({ ...result, description: check.description })
     } catch (error: unknown) {
       results.push({ passed: false, description: check.description, reason: error instanceof Error ? error.message : String(error) })
