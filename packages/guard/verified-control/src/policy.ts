@@ -32,12 +32,13 @@ export function baseToolDecision(ctx: Context, config: PolicyConfig, exec: ToolE
   const network = config.networkTools.includes(exec.name)
   const irreversible = config.irreversibleTools.includes(exec.name)
   const controlled = mutation || network || irreversible
+  if (exec.name === 'control_get_state') return { kind: 'allow' }
+  if (exec.name === 'control_attest_fact' || exec.name === 'control_amend_contract' || exec.name === 'control_reconcile_external_effect') return { kind: 'ask', reason: `${exec.name} requires explicit human approval` }
   if ((unresolvedExternalReview(state) || unresolvedTransaction(state)) && controlled) return { kind: 'deny', reason: 'verified-control recovery/reconciliation is required before more controlled work' }
   if (state.toolCalls >= maxFor(contract?.requestedBudget.maxToolCalls, config.maxToolCalls)) return { kind: 'deny', reason: 'verified-control tool-call budget exhausted' }
   if (state.failures >= maxFor(contract?.requestedBudget.maxFailures, config.maxFailures)) return { kind: 'deny', reason: 'verified-control failure budget exhausted' }
   if (contract !== null && state.startedAt !== null && Date.now() - state.startedAt >= maxFor(contract.requestedBudget.maxDurationMs, config.maxDurationMs)) return { kind: 'deny', reason: 'verified-control duration budget exhausted' }
   if (state.lastTool.repeated > maxFor(contract?.requestedBudget.maxRepeatedToolCalls, config.maxRepeatedToolCalls)) return { kind: 'deny', reason: 'verified-control repeated-tool stall detected; change strategy before retrying' }
-  if (exec.name === 'control_attest_fact' || exec.name === 'control_amend_contract') return { kind: 'ask', reason: `${exec.name} requires explicit human approval` }
   if (exec.name === 'update_goal' && typeof exec.arguments === 'object' && exec.arguments !== null && (exec.arguments as Record<string, unknown>).action === 'complete' && contract === null) return { kind: 'deny', reason: 'goal completion requires a Goal Contract' }
   if (!controlled) return { kind: 'allow' }
   if (contract === null) return config.enforceWithoutContract ? { kind: 'deny', reason: 'controlled work requires a Goal Contract' } : { kind: 'allow' }

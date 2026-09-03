@@ -68,6 +68,7 @@ export type ExternalResolution = 'confirmed' | 'not-applied' | 'compensated'
 export interface ExternalEffect {
   id: string
   tool: string
+  callId?: string
   openedAt: number
   status: ExternalEffectStatus
   resolution?: ExternalResolution
