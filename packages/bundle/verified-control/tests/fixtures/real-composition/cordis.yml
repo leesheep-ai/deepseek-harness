@@ -1,6 +1,22 @@
-- id: skill-filesystem
-  config:
-    watch: false
+- id: session
+  name: '@deepseek-ai/dsh-session'
 
-- id: session-telemetry-otel
-  disabled: true
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+
+- id: session-projection
+  name: '@deepseek-ai/dsh-session-projection'
+
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+
+- id: fs-local
+  name: '@deepseek-ai/dsh-fs-local'
+  config:
+    cwd: !!js process.cwd()
+
+- id: goal
+  name: '@deepseek-ai/dsh-goal'
