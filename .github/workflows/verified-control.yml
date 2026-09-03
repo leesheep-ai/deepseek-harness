@@ -7,6 +7,10 @@ on:
     paths:
       - 'packages/guard/verified-control/**'
       - 'packages/bundle/verified-control/**'
+      - 'packages/test-support/loader-smoke/tests/fixtures/headless-driver.ts'
+      - 'apps/cli/tests/profiles/headless/verified-control-snapshot.patch.yml'
+      - 'apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts'
+      - 'apps/cli/tests/profiles/headless/tests/expected/verified-control/**'
       - 'tsconfig.base.json'
       - 'tsconfig.host.json'
       - '.github/workflows/verified-control.yml'
@@ -14,6 +18,10 @@ on:
     paths:
       - 'packages/guard/verified-control/**'
       - 'packages/bundle/verified-control/**'
+      - 'packages/test-support/loader-smoke/tests/fixtures/headless-driver.ts'
+      - 'apps/cli/tests/profiles/headless/verified-control-snapshot.patch.yml'
+      - 'apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts'
+      - 'apps/cli/tests/profiles/headless/tests/expected/verified-control/**'
       - 'tsconfig.base.json'
       - 'tsconfig.host.json'
       - '.github/workflows/verified-control.yml'
@@ -36,10 +44,25 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Install workspace
         run: pnpm install --no-frozen-lockfile
+      - name: Generate verified-control snapshot goldens
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        env:
+          DSH_SNAPSHOT: refresh
+        run: |
+          pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/cli/tests/profiles/headless/tests/expected/verified-control/session.expected.jsonl apps/cli/tests/profiles/headless/tests/expected/verified-control/stream-json.expected.jsonl
+          if ! git diff --cached --quiet; then
+            git commit -m 'test(verified-control): record keyless headless snapshot'
+            git push
+          fi
       - name: Typecheck verified-control projects
         run: pnpm exec tsc -b packages/guard/verified-control packages/bundle/verified-control --pretty false
       - name: Run verified-control tests
         run: pnpm exec vitest run packages/guard/verified-control/tests packages/bundle/verified-control/tests
+      - name: Replay verified-control recorded snapshot
+        run: pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/profiles/headless/tests/verified-control.expected.e2e.ts
       - name: Run package contract gates
         run: |
           pnpm run verify-tsconfig-paths
