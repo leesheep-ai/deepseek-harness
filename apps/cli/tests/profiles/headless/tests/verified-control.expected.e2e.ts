@@ -1,5 +1,5 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
-import { delimiter as pathDelimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   normalizeSessionLog,
