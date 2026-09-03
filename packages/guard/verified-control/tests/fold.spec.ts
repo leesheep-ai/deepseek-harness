@@ -32,4 +32,35 @@ describe('verified-control fold', () => {
     const twice = applyVerifiedControlEvent(once, event)
     expect(twice.lastTool.repeated).toBe(2)
   })
+
+  it('resets goal-scoped counters on durable goal creation without hiding cross-goal recovery state', () => {
+    const prior = {
+      ...EMPTY_CONTROL_STATE,
+      contract: { objective: 'old', success: [{ description: 'done' }], invariants: [], nonGoals: [], requestedAuthority: { mutation: true, network: false, irreversible: false }, requestedBudget: { maxToolCalls: 10, maxFailures: 2 } },
+      contractGoalId: 'goal-old',
+      toolCalls: 9,
+      failures: 2,
+      delegations: 1,
+      delegationContracts: { d: { id: 'd', objective: 'old', expectedEvidence: ['x'], resourceScope: [], createdAt: 1, status: 'prepared' as const } },
+      startedAt: 1,
+      facts: { x: { key: 'x', value: 1, origin: 'verifier' as const, source: 'test', confidence: 1, observedAt: 1, verifiedBy: ['test'], dependencies: [], valid: true } },
+      externalEffects: { effect: { id: 'effect', tool: 'deploy', openedAt: 1, status: 'review' as const } },
+    }
+    const created = {
+      type: 'goal/change', seq: 10, time: 100,
+      data: { kind: 'goal/change', version: 1, operation: 'create', goal: { id: 'goal-new', revision: 1, objective: 'new', phase: 'active', maxGoalRounds: 8 }, roundsStarted: 0, createdAt: 100, updatedAt: 100 },
+    } as any
+
+    const next = applyVerifiedControlEvent(prior, created)
+
+    expect(next.contract).toBeNull()
+    expect(next.contractGoalId).toBeNull()
+    expect(next.toolCalls).toBe(0)
+    expect(next.failures).toBe(0)
+    expect(next.delegations).toBe(0)
+    expect(next.delegationContracts).toEqual({})
+    expect(next.startedAt).toBeNull()
+    expect(next.facts).toEqual(prior.facts)
+    expect(next.externalEffects).toEqual(prior.externalEffects)
+  })
 })
