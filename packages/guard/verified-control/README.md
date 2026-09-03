@@ -43,6 +43,8 @@ Effective authority is `contract request ∩ deployment policy`. Tool-call, fail
 
 Goal completion is fail-closed: `update_goal(action=complete)` is denied until all declared success checks and invariants have deterministic verifier coverage and pass. Configured workspace mutations also verify invariants before execution and again before commit.
 
+Autonomous continuation is fail-closed too. At `agent/turn-stopping`, verified control converts hard no-progress or unsafe conditions — exhausted tool/failure/duration budgets, repeated-tool stalls, unresolved rollback failure, or unresolved external-effect review — into the native goal `blocked` phase. The existing `goal-round-driver` therefore remains the only owner of automatic rounds and round accounting; verified control never adds a parallel continuation loop.
+
 The plugin records tool failures and control-plane verification/recovery failures as incidents with regression-eval candidates, turning real failures into future test coverage.
 
 -----
@@ -76,7 +78,7 @@ Adaptive effort is optional. When enabled, an `agent/request` listener changes o
 
 #### What the model sees
 
-A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven.
+A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven. If a hard continuation condition is reached, the native goal state becomes `blocked`, so the next autonomous goal round is not scheduled.
 
 #### Token effect
 
@@ -104,6 +106,6 @@ No runtime invariant companion is published because the authoritative control st
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, and `agent/request`) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
+Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, `agent/turn-stopping`, and `agent/request`) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
 
 </details>

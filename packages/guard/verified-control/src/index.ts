@@ -11,6 +11,7 @@ import { installTransactionRuntime } from './transaction-runtime.ts'
 import { installExternalEffectRuntime } from './external-effect-runtime.ts'
 import { installDelegationRuntime } from './delegation-runtime.ts'
 import { installAdaptiveEffort } from './effort.ts'
+import { installContinuationGate } from './continuation-gate.ts'
 import { installControlPrompt } from './prompt.ts'
 import { EMPTY_CONTROL_STATE, type VerifiedControlState } from './types.ts'
 
@@ -26,6 +27,7 @@ export {
 export * from './transaction.ts'
 export * from './verifier.ts'
 export * from './contract.ts'
+export * from './continuation-gate.ts'
 
 export const name = 'verified-control'
 export const inject = ['fs', 'goals', 'sessionProjections', 'systemPrompt', 'tools']
@@ -147,6 +149,7 @@ export function apply(ctx: Context, input: Config = {}): void {
   installTransactionRuntime(ctx, { mutationTools: policy.mutationTools, cleanupTimeoutMs: input.cleanupTimeoutMs ?? 10_000 })
   installExternalEffectRuntime(ctx, { irreversibleTools: policy.irreversibleTools })
   installDelegationRuntime(ctx, { delegationTools: policy.delegationTools })
+  installContinuationGate(ctx, policy)
   installAdaptiveEffort(ctx, {
     enabled: input.adaptiveEffort ?? false,
     baseline: input.baselineReasoningEffort ?? 'high',
