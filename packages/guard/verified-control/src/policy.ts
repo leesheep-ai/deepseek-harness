@@ -24,6 +24,9 @@ export interface PolicyConfig {
 }
 
 function maxFor(requested: number | undefined, platform: number): number { return Math.min(requested ?? platform, platform) }
+export function failureBudgetExceeded(failures: number, requested: number | undefined, platform: number): boolean {
+  return failures > maxFor(requested, platform)
+}
 function unresolvedExternalReview(state: VerifiedControlState): boolean { return Object.values(state.externalEffects).some(effect => effect.status === 'open' || effect.status === 'review') }
 function unresolvedRollback(state: VerifiedControlState): boolean { return Object.values(state.openTransactions).some(tx => tx.status === 'rollback-failed') }
 function pendingTransaction(state: VerifiedControlState): boolean { return Object.keys(state.openTransactions).length > 0 }
@@ -83,7 +86,7 @@ export function baseToolDecision(ctx: Context, config: PolicyConfig, exec: ToolE
 
   if ((unresolvedExternalReview(state) || unresolvedRollback(state)) && controlled) return { kind: 'deny', reason: 'verified-control recovery/reconciliation is required before more controlled work' }
   if (state.toolCalls >= maxFor(contract?.requestedBudget.maxToolCalls, config.maxToolCalls)) return { kind: 'deny', reason: 'verified-control tool-call budget exhausted' }
-  if (state.failures >= maxFor(contract?.requestedBudget.maxFailures, config.maxFailures)) return { kind: 'deny', reason: 'verified-control failure budget exhausted' }
+  if (failureBudgetExceeded(state.failures, contract?.requestedBudget.maxFailures, config.maxFailures)) return { kind: 'deny', reason: 'verified-control failure budget exceeded' }
   if (contract !== null && state.startedAt !== null && Date.now() - state.startedAt >= maxFor(contract.requestedBudget.maxDurationMs, config.maxDurationMs)) return { kind: 'deny', reason: 'verified-control duration budget exhausted' }
   if (state.lastTool.repeated > maxFor(contract?.requestedBudget.maxRepeatedToolCalls, config.maxRepeatedToolCalls)) return { kind: 'deny', reason: 'verified-control repeated-tool stall detected; change strategy before retrying' }
   if (delegation && state.delegations >= maxFor(contract?.requestedBudget.maxDelegations, config.maxDelegations)) return { kind: 'deny', reason: 'verified-control delegation budget exhausted' }
