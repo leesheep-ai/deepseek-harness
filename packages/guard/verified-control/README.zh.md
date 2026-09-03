@@ -30,7 +30,7 @@ kind: "package-reference"
 
 推荐通过 `@deepseek-ai/dsh-verified-control-bundle` 使用，并把它叠加在 `@deepseek-ai/dsh-base` 之后。除非显式加入该 bundle，随仓库发布的 profile 默认行为保持不变。
 
-在 mutation、network、irreversible work 或 delegation 之前，先创建普通持久化 Goal，再调用 `control_set_contract`。Contract 声明 objective、确定性 success checks、安全 invariants、non-goals、申请权限与有限预算；部署配置只能进一步收紧这些请求。`control_amend_contract`、Fact 人工认证和 external-effect reconciliation 使用现有 approval path。
+在 mutation、network、irreversible work 或 delegation 之前，先创建普通持久化 Goal，再调用 `control_set_contract`。Contract 声明 objective、确定性 success checks、安全 invariants、non-goals、申请权限与有限预算；部署配置只能进一步收紧这些请求。被接受的 Contract 会持久绑定到该 Goal id 及其精确 objective；如果后续编辑 Goal objective，已有 Contract 会立刻视为 stale，直到 `control_amend_contract` 获得显式人工批准。`control_amend_contract`、Fact 人工认证和 external-effect reconciliation 使用现有 approval path。
 
 使用 `control_observe_fact` 保存后续步骤依赖的观察。Fact 保存 origin、confidence、observed time、可选 TTL、dependency edges、独立 verifier 身份和有效性。根事实变化或失效会递归使依赖事实失效，过期事实不会进入当前 truth view；模型观察不能自证。
 
@@ -39,11 +39,13 @@ kind: "package-reference"
 <a id="control-semantics"></a>
 ## 控制语义
 
-有效权限是 `contract request ∩ deployment policy`。Tool call、failure、duration、重复调用与 delegation budget 同样取更严格的一侧。即使操作预算耗尽，`control_get_state` 仍保持可用，避免恢复路径被控制面自身锁死。
+有效权限是 `contract request ∩ deployment policy`。Tool call、failure、duration、重复调用与 delegation budget 同样取更严格的一侧。Failure budget 表示“允许容忍的失败次数”：`maxFailures: 0` 在尚未发生失败时仍允许正常工作，但第一次观测到失败后立即 fail-closed。即使操作预算耗尽，`control_get_state` 与新 Goal 的 Contract 建立仍保持可用，避免恢复路径或新目标被旧计数器锁死。
 
-Goal completion 采用 fail-closed：只有全部 success check 与 invariant 都具有确定性 verifier 覆盖并通过时，`update_goal(action=complete)` 才允许执行。配置为 workspace mutation 的工具在执行前和 commit 前都会验证 invariants。
+每个 Goal Contract 都只作用于一个持久化 Goal id 及其精确 objective。持久 Goal 的 `create` 或 `clear` 会重置 Goal-scoped 的 Contract、预算、delegation、重复调用、duration 与 recovery counters；可信 Fact、Incident 历史以及尚未解决的 transaction/external-effect 状态不会被清空，因为这些仍可能描述下一 Goal 必须面对的真实世界或安全状态。同一个 Goal 上经人工批准的 Contract amendment 不会重置已经消耗的预算。
 
-Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/failure/duration budget 耗尽、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
+Goal completion 继续采用 fail-closed，但它被视为“经过验证的 commit 操作”，而不是另一份普通 operational work。即使 tool/failure/duration budget 已经到达边界，只要任务确实完成，`update_goal(action=complete)` 仍可进入最终验证；但只要还有任何 transaction 或 external effect 未收口、Contract 已 stale/绑定到别的 Goal，或者任一 success check/invariant 缺少确定性 verifier 覆盖或验证失败，completion 都会被拒绝。配置为 workspace mutation 的工具在执行前和 commit 前也都会验证 invariants。
+
+Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/duration budget 耗尽、failure tolerance 已被超过、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
 
 Claude Fable 5.1 thinking replay 也采用 fail-closed。在派发一个仍保留 replay-bound Fable reasoning block 的 Fable 请求前，guard 会重建该 block 生成时位于它之前的 model-visible surface，并与当前 retained prefix、system prompt 和有序 tool definitions 比较。如果更早消息被替换、只 compact 了 retained thinking 之前的历史、system prompt 被修改或 tool schema 被修改，就产生 `FABLE_PREFIX_MISMATCH`；若当前存在 active Goal，则会持久化转为 `blocked`，而不是继续发送已知会违反 Fable prefix binding 的 provider request。
 
@@ -82,7 +84,7 @@ Claude Fable 5.1 会额外获得一层模型感知的 runtime-context overlay，
 
 #### 模型看到什么
 
-一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。达到硬 continuation condition 时，原生 Goal 会进入 `blocked`，因此不会再调度下一次自动 goal round。Fable 5.1 路由还会通过现有 runtime-context snapshot 机制获得上述模型/effort 感知 guidance；其他模型不会收到 Fable contribution。Prefix-binding 校验完全由 Harness 执行，正常路径不会增加模型提醒；只有 mismatch 才会变成显式 request error 与 blocked-goal reason。
+一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。`control_get_state` 会把持久 Contract binding（`contractGoalId`）、freshness-aware Facts 与 recovery state 一起返回；完整控制状态不会被持续注入每次请求。达到硬 continuation condition 时，原生 Goal 会进入 `blocked`，因此不会再调度下一次自动 goal round。Fable 5.1 路由还会通过现有 runtime-context snapshot 机制获得上述模型/effort 感知 guidance；其他模型不会收到 Fable contribution。Prefix-binding 校验完全由 Harness 执行，正常路径不会增加模型提醒；只有 mismatch 才会变成显式 request error 与 blocked-goal reason。
 
 #### Token 影响
 
