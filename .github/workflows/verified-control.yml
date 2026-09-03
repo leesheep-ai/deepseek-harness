@@ -35,6 +35,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feature/verified-control
       - uses: actions/setup-node@v4
         with:
           node-version: 22.20.0
@@ -45,7 +47,7 @@ jobs:
       - name: Install workspace
         run: pnpm install --no-frozen-lockfile
       - name: Generate verified-control snapshot goldens
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
         env:
           DSH_SNAPSHOT: refresh
         run: |
@@ -55,7 +57,7 @@ jobs:
           git add apps/cli/tests/profiles/headless/tests/expected/verified-control/session.expected.jsonl apps/cli/tests/profiles/headless/tests/expected/verified-control/stream-json.expected.jsonl
           if ! git diff --cached --quiet; then
             git commit -m 'test(verified-control): record keyless headless snapshot'
-            git push
+            git push origin HEAD:feature/verified-control
           fi
       - name: Typecheck verified-control projects
         run: pnpm exec tsc -b packages/guard/verified-control packages/bundle/verified-control --pretty false
