@@ -3,16 +3,12 @@ import { assembleContextFor, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
-const overlayPath = process.argv[2]
-if (overlayPath === undefined) throw new Error('verified-control snapshot requires an overlay path')
+const rootConfigPath = process.argv[2]
+if (rootConfigPath === undefined) throw new Error('verified-control snapshot requires a root config path')
 
-const rootConfigPath = fileURLToPath(new URL('../../../../base/tests/fixtures/root.cordis.yml', import.meta.url))
-const basePatchPath = fileURLToPath(new URL('../../../../base/cordis.patch.yml', import.meta.url))
 const verifiedPatchPath = fileURLToPath(new URL('../../../cordis.patch.yml', import.meta.url))
 const ctx = await boot('verified-control-real-composition', rootConfigPath, [
-  ...loadOverlayPatches('verified-control-real-composition', basePatchPath),
   ...loadOverlayPatches('verified-control-real-composition', verifiedPatchPath),
-  ...loadOverlayPatches('verified-control-real-composition', overlayPath),
 ])
 
 try {
