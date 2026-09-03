@@ -7,11 +7,15 @@ on:
     paths:
       - 'packages/guard/verified-control/**'
       - 'packages/bundle/verified-control/**'
+      - 'tsconfig.base.json'
+      - 'tsconfig.host.json'
       - '.github/workflows/verified-control.yml'
   pull_request:
     paths:
       - 'packages/guard/verified-control/**'
       - 'packages/bundle/verified-control/**'
+      - 'tsconfig.base.json'
+      - 'tsconfig.host.json'
       - '.github/workflows/verified-control.yml'
 
 permissions:
@@ -32,52 +36,13 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Install workspace
         run: pnpm install --no-frozen-lockfile
-      - name: Sync verified-control monorepo metadata
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('tsconfig.base.json')
-          text = path.read_text()
-          anchor = '      "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],'
-          entry = '      "@deepseek-ai/dsh-verified-control-bundle": ["./packages/bundle/verified-control/src"],'
-          if entry not in text:
-              if anchor not in text:
-                  raise SystemExit(f'missing tsconfig.base.json anchor: {anchor}')
-              text = text.replace(anchor, f'{anchor}\n{entry}', 1)
-          path.write_text(text)
-          PY
-          pnpm run gen-tsconfig-paths
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('tsconfig.host.json')
-          text = path.read_text()
-          insertions = [
-              ('    { "path": "./packages/guard/timeout-policy" },', '    { "path": "./packages/guard/verified-control" },'),
-              ('    { "path": "./packages/bundle/base" },', '    { "path": "./packages/bundle/verified-control" },'),
-          ]
-          for anchor, entry in insertions:
-              if entry not in text:
-                  if anchor not in text:
-                      raise SystemExit(f'missing tsconfig.host.json anchor: {anchor}')
-                  text = text.replace(anchor, f'{anchor}\n{entry}', 1)
-          path.write_text(text)
-          PY
-          if ! git diff --quiet -- tsconfig.base.json tsconfig.host.json; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add tsconfig.base.json tsconfig.host.json
-            git commit -m 'chore(verified-control): sync monorepo metadata'
-            git push
-          fi
       - name: Typecheck verified-control projects
         run: pnpm exec tsc -b packages/guard/verified-control packages/bundle/verified-control --pretty false
       - name: Run verified-control tests
         run: pnpm exec vitest run packages/guard/verified-control/tests packages/bundle/verified-control/tests
       - name: Run package contract gates
         run: |
+          pnpm run verify-tsconfig-paths
           pnpm run verify-package-paths
           pnpm run verify-dsh-package-licenses
           pnpm run verify-package-invariants
