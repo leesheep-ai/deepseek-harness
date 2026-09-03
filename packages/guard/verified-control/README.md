@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-verified-control` is an opt-in hard control plane for DeepSeek Harness. It keeps the native observation-driven agent loop, sessions, compaction, sandbox, parallel tool execution, and subagent runtime, while owning the boundaries a probabilistic model should not own alone: Goal Contract, trusted World State, effective authority and budgets, verification, commit/rollback, external-effect reconciliation, incidents, delegation contracts, and optional adaptive reasoning effort.
+`dsh-verified-control` is an opt-in hard control plane for DeepSeek Harness. It keeps the native observation-driven agent loop, sessions, compaction, sandbox, parallel tool execution, and subagent runtime, while owning the boundaries a probabilistic model should not own alone: Goal Contract, trusted World State, effective authority and budgets, verification, commit/rollback, external-effect reconciliation, incidents, delegation contracts, optional adaptive reasoning effort, and model-aware Claude Fable 5.1 runtime guidance.
 
 The governing rule is: **the model may propose and observe; the harness decides what may commit and what counts as verified.**
 
@@ -69,24 +69,26 @@ Delegation continues to use DeepSeek Harness' native subagent runtime, including
 
 Adaptive effort is optional. When enabled, an `agent/request` listener changes only the current request's `reasoningEffort`: stable progress uses baseline effort, failure/repetition raises it, and rollback/external-effect recovery risk uses critical effort. It never rewrites previous messages or rebuilds the system/tool prefix. Effort identifiers remain adapter/model capabilities.
 
+Claude Fable 5.1 gets an additional model-aware runtime-context overlay derived from the [Claude Fable 5.1 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1). It activates only for the official `claude-fable-5-1` and `anthropic.claude-fable-5-1` model ids. The base overlay asks the model to finish already-authorized work, batch independent tools, keep patches/tests scoped, prefer targeted edits, keep useful parent work moving while background subagents run, and expose concise progress during long tool chains. `low` effort adds explicit search/retrieval verification pressure; `xhigh` and `max` add long-output discipline.
+
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-### Verified-control policy and control tools
+### Verified-control policy, control tools, and Fable 5.1 runtime context
 
 #### What the model sees
 
-A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven. If a hard continuation condition is reached, the native goal state becomes `blocked`, so the next autonomous goal round is not scheduled.
+A static verified-control policy section tells the model to establish a durable goal and Goal Contract before controlled work, record durable observations without treating them as self-verified facts, prepare typed delegation contracts before subagent launches, and stop on unresolved rollback or external-effect review. The model also receives the stable schemas for the `control_*` tools. Dynamic control state is returned only when those tools are called; ordinary tool choice remains observation-driven. If a hard continuation condition is reached, the native goal state becomes `blocked`, so the next autonomous goal round is not scheduled. A Fable 5.1 route additionally receives the model/effort-aware guidance above through the existing runtime-context snapshot mechanism; other models receive no Fable contribution.
 
 #### Token effect
 
-The static policy and control-tool schemas add a fixed request-prefix cost while this plugin is mounted. Data-dependent contract, World State, transaction, incident, and delegation values add tokens only through ordinary tool calls/results that enter retained conversation history; the plugin does not continuously serialize the full control state into every request.
+The static policy and control-tool schemas add a fixed request-prefix cost while this plugin is mounted. Data-dependent contract, World State, transaction, incident, and delegation values add tokens only through ordinary tool calls/results that enter retained conversation history; the plugin does not continuously serialize the full control state into every request. The Fable overlay is empty for other models. For Fable 5.1 it is emitted only when the complete runtime-context snapshot changes, so a stable route/effort does not add a fresh reminder every request.
 
 #### KV Cache effect
 
-The policy text and tool definitions are stable for a mounted composition, so they remain part of the reusable request prefix. Adaptive effort changes request configuration rather than rewriting prior messages, and dynamic control data is append-only tool traffic, so the plugin does not intentionally invalidate earlier prefix cache entries.
+The static policy text and tool definitions are stable for a mounted composition, so they remain part of the reusable request prefix. Adaptive effort changes request configuration rather than rewriting prior messages. Fable-specific guidance is a dynamic runtime-context snapshot, which DeepSeek Harness appends as a durable user-role message and explicitly marks as superseding older runtime-context snapshots. This preserves append-only conversation history instead of mutating earlier system/tool/message prefix material when effort-specific guidance changes.
 
 ## Known Limitations and Deferred Work
 
@@ -99,6 +101,7 @@ No runtime invariant companion is published because the authoritative control st
 - Deployment-specific irreversible tools cannot be inferred from a generic shell tool name and must be configured explicitly.
 - Delegation `resourceScope` is enforced as a parent-side contract; enforcing it inside an out-of-process child requires equivalent provider/tool-filter support.
 - Adaptive effort cannot infer which identifiers a selected provider/model supports.
+- Fable route detection runs during prompt assembly, before the current step's `agent/request` waterfall. A middleware that changes a non-Fable/blank route to Fable only inside that waterfall receives the overlay on the next assembled step, not retroactively on the already-assembled first request.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -106,6 +109,6 @@ No runtime invariant companion is published because the authoritative control st
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, `agent/turn-stopping`, and `agent/request`) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
+Keep hard-control semantics on public DeepSeek Harness seams (`sessionProjections`, `tools/pre-execute`, `tools/execute`, `agent/pre-step`, `agent/turn-stopping`, `agent/request`, and append-only runtime context) instead of forking the core loop unless a genuinely missing primitive must be added upstream.
 
 </details>

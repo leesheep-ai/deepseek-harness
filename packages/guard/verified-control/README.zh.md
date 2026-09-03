@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-verified-control` 是 DeepSeek Harness 的可选强控制面。它保留原生 observation-driven Agent Loop、Session、Compaction、Sandbox、并行工具执行与 Subagent Runtime，同时接管概率模型不应独自拥有的边界：Goal Contract、可信 World State、有效权限与预算、验证、commit/rollback、外部副作用 reconciliation、Incident、Delegation Contract 与可选动态 reasoning effort。
+`dsh-verified-control` 是 DeepSeek Harness 的可选强控制面。它保留原生 observation-driven Agent Loop、Session、Compaction、Sandbox、并行工具执行与 Subagent Runtime，同时接管概率模型不应独自拥有的边界：Goal Contract、可信 World State、有效权限与预算、验证、commit/rollback、外部副作用 reconciliation、Incident、Delegation Contract、可选动态 reasoning effort，以及模型感知的 Claude Fable 5.1 runtime guidance。
 
 核心规则是：**模型可以提出方案和观察；Harness 决定什么允许提交，以及什么才算被验证。**
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 
 Goal completion 采用 fail-closed：只有全部 success check 与 invariant 都具有确定性 verifier 覆盖并通过时，`update_goal(action=complete)` 才允许执行。配置为 workspace mutation 的工具在执行前和 commit 前都会验证 invariants。
 
-自动续跑同样采用 fail-closed。在 `agent/turn-stopping` 边界，Verified Control 会把无法安全继续或已经没有有效进展空间的硬条件——tool/failure/duration budget 耗尽、重复工具调用卡死、rollback 失败尚未处理、external-effect 尚待人工确认——转换为原生 Goal 的 `blocked` 状态。这样 `goal-round-driver` 仍然是自动轮次与 round accounting 的唯一所有者；Verified Control 不会再创建一条并行 continuation loop。
+Autonomous continuation 同样 fail-closed。在 `agent/turn-stopping` 边界，如果检测到 tool/failure/duration budget 耗尽、重复工具调用卡死、未解决 rollback failure 或 external-effect review，Verified Control 会把原生 Goal 转为 `blocked`。这样仍由既有 `goal-round-driver` 唯一负责自动轮次与 round accounting；Verified Control 不会引入第二套 continuation loop。
 
 工具失败以及控制面的验证/恢复失败会记录为 Incident，并附带 regression-eval candidate，把真实失败转化为后续评测覆盖。
 
@@ -69,24 +69,26 @@ Delegation 继续使用 DeepSeek Harness 原生 subagent runtime，包括 `run_i
 
 Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改当前请求的 `reasoningEffort`：稳定推进用 baseline，连续失败/重复调用时提升，存在 rollback 或 external-effect recovery risk 时使用 critical effort。它不会改写历史消息或重建 system/tool prefix；具体 effort ID 仍由 adapter/model 定义。
 
+Claude Fable 5.1 会额外获得一层模型感知的 runtime-context overlay，其设计依据 [Claude Fable 5.1 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1)。它只对官方 `claude-fable-5-1` 与 `anthropic.claude-fable-5-1` model id 生效。基础 overlay 要求模型完成已经授权的完整工作、批量发出相互独立的 tool call、限制 patch/committed tests 范围、优先 targeted edit、background subagent 运行时继续推进父任务，以及在长 tool chain 中提供简短进度信息。`low` effort 会额外强调 search/retrieval 验证；`xhigh` 与 `max` 会额外约束长输出时不要在 reasoning 中完整起草后再重复生成。
+
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-### Verified Control 策略与控制工具
+### Verified Control 策略、控制工具与 Fable 5.1 runtime context
 
 #### 模型看到什么
 
-一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。如果命中 continuation hard stop，原生 Goal 会转为 `blocked`，因此不会再调度下一轮自动 Goal Round。
+一段静态 verified-control policy 会要求模型在受控工作前建立持久化 Goal 与 Goal Contract，把需要跨步骤使用的观察记录为 Fact 但不把模型观察视为已独立验证，在启动 subagent 前准备 typed delegation contract，并在存在未解决 rollback 或 external-effect review 时停止继续受控执行。模型同时会看到稳定的 `control_*` 工具 schema。动态控制状态只有在调用这些工具时才返回；普通工具选择仍保持 observation-driven。达到硬 continuation condition 时，原生 Goal 会进入 `blocked`，因此不会再调度下一次自动 goal round。Fable 5.1 路由还会通过现有 runtime-context snapshot 机制获得上述模型/effort 感知 guidance；其他模型不会收到 Fable contribution。
 
 #### Token 影响
 
-插件挂载后，静态 policy 与控制工具 schema 会产生固定的 request-prefix token 成本。依数据变化的 Contract、World State、Transaction、Incident 与 Delegation 内容只会通过普通工具调用/结果进入保留的对话历史；插件不会在每次请求中持续序列化全部控制状态。
+插件挂载后，静态 policy 与控制工具 schema 会产生固定的 request-prefix token 成本。依数据变化的 Contract、World State、Transaction、Incident 与 Delegation 内容只会通过普通工具调用/结果进入保留的对话历史；插件不会在每次请求中持续序列化全部控制状态。Fable overlay 对其他模型为空。对于 Fable 5.1，它只会在完整 runtime-context snapshot 发生变化时写入，因此稳定 route/effort 不会每次 request 都追加一条提醒。
 
 #### KV Cache 影响
 
-在固定组合中，policy 文本与工具定义保持稳定，因此可以留在可复用请求前缀中。Adaptive effort 只修改请求配置而不改写历史消息，动态控制数据以追加式 tool traffic 出现，所以插件不会主动使既有前缀 KV Cache 失效。
+固定组合中的静态 policy 文本与工具定义保持稳定，因此可以留在可复用 request prefix。Adaptive effort 只修改 request config，不改写历史消息。Fable-specific guidance 使用动态 runtime-context snapshot：DeepSeek Harness 会把它作为持久 user-role message 追加，并明确标记新 snapshot supersede 旧 runtime-context snapshot。因此 effort-specific guidance 变化时仍保持 append-only conversation history，而不是修改之前的 system/tool/message prefix。
 
 ## 已知限制与延后工作
 
@@ -99,6 +101,7 @@ Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改
 - 部署特定 irreversible tools 无法仅根据 generic shell tool 名安全推断，必须显式配置。
 - Delegation `resourceScope` 当前是父侧 contract；若要在进程外 child 内强制，需要 provider/tool-filter 提供等价能力。
 - Adaptive effort 无法推断具体 provider/model 支持哪些 effort ID。
+- Fable route detection 发生在 prompt assembly 阶段，早于当前 step 的 `agent/request` waterfall。如果 middleware 只在该 waterfall 内把 non-Fable/空 route 改为 Fable，已经完成 assembly 的第一次 request 不会被追溯修改，而会从下一次 assembled step 开始获得 overlay。
 
 <a id="dev-note"></a>
 ### 开发说明
@@ -106,6 +109,6 @@ Adaptive effort 为可选能力。启用后，`agent/request` listener 只修改
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/turn-stopping`、`agent/request`）承载 hard-control 语义，不 fork core loop。
+除非确实缺失底层 primitive，否则继续通过 DeepSeek Harness 的公开 seam（`sessionProjections`、`tools/pre-execute`、`tools/execute`、`agent/pre-step`、`agent/turn-stopping`、`agent/request` 与 append-only runtime context）承载 hard-control 语义，不 fork core loop。
 
 </details>
