@@ -1,0 +1,30 @@
+name: source-export
+
+on:
+  push:
+    branches:
+      - feature/verified-control
+    paths:
+      - '.github/workflows/source-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Archive source tree
+        run: |
+          tar --exclude=.git -czf /tmp/deepseek-harness-feature-verified-control.tar.gz .
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-feature-verified-control
+          path: /tmp/deepseek-harness-feature-verified-control.tar.gz
+          if-no-files-found: error
+          compression-level: 0
