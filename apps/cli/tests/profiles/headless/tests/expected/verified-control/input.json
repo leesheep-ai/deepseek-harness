@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "op": "prompt",
+      "text": "Create a durable goal, establish a verified-control Goal Contract for this snapshot, inspect the persisted control state, and report readiness without mutating files or using the network."
+    }
+  ]
+}
