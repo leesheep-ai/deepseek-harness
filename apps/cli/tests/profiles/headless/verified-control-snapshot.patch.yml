@@ -1,0 +1,43 @@
+# Keyless replay-backed verified-control patch over the shipped headless profile.
+# The actual verified-control bundle patch is applied as a second overlay by the
+# snapshot test so this file owns only scenario-specific route/persistence facts.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: llm-deepseek
+  disabled: true
+
+# Keep the replay script one-to-one with the agent's calls; fallback title
+# generation remains available without consuming an LLM replay entry.
+- id: session-title-llm
+  disabled: true
+
+- id: agent-loop
+  config:
+    agents:
+      - id: main
+        provider: anthropic
+        model: claude-fable-5-1
+        reasoningEffort: low
+        cwd: !!js process.cwd()
+
+- id: session-persistence-jsonl
+  config:
+    root: './.sessions'
+    compression: none
+
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: anthropic
+            name: Anthropic replay
+            models:
+              - id: claude-fable-5-1
+                name: Claude Fable 5.1 replay
+                reasoningEfforts: [low, medium, high, xhigh]
+                defaultReasoningEffort: low
